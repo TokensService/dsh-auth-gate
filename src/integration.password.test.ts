@@ -156,7 +156,9 @@ describe("integration: password flow over real HTTP", () => {
 
       expect((await fetch(`${base}/__probe`, { headers: { cookie } })).status).toBe(200);
       const status = await fetch(`${base}/auth/status`, { headers: { cookie } });
-      expect(await status.text()).toBe('{"authenticated":true,"logoutOrder":1000}');
+      expect(await status.text()).toBe(
+        '{"authenticated":true,"username":"admin","logoutOrder":1000}',
+      );
     } finally {
       await unmountStack(fibers, root);
     }

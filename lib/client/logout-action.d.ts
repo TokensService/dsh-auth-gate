@@ -9,6 +9,7 @@ export interface SettingsLogoutActionProps {
  * 可复用的登出提交按钮：原生 form POST（零 JS 依赖）+ 16px 方块图标 + 本地化文字。
  * 渲染进 `settings.general.item`（设置 → 通用设置 的追加行槽，order 30 → 页面底部），
  * 水平居中的醒目 CTA；文案随界面语言在「退出登录」/ "Sign out" 间切换。
+ * 会话带用户名时（password 模式），按钮上方显示当前登录用户名。
  */
 export declare function SettingsLogoutAction({ t }: SettingsLogoutActionProps): import("react").JSX.Element | null;
 //# sourceMappingURL=logout-action.d.ts.map

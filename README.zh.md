@@ -92,6 +92,17 @@ Google Authenticator 等）里的 6 位验证码（先密码、后验证码）�
 本地化文字，配色用主题 token、深浅色自适应）；文案跟随界面语言（复用「设置」里
 语言切换的同一套 locale 机制）；点击走原有的原生 `POST /auth/logout?next=/` 登出流程。
 
+密码模式下，按钮上方会显示当前登录用户名。按钮和用户名行都读取
+`GET /auth/status`，该端点以 JSON 报告当前会话：
+
+```json
+{ "authenticated": true, "username": "alice", "logoutOrder": 1000 }
+```
+
+`username` 为会话 subject（密码模式即登录用户名）；无有效会话时为 `null`，
+token 模式下恒为 `null`（共享秘密没有用户身份）。dsh web 内任意页面都可 fetch
+此端点来显示当前登录用户。
+
 ## 配置
 
 bundle 挂载行（id `dsh-auth-gate`，由 `dsh plugin add` 自动插入）使用默认配置：

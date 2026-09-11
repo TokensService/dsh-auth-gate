@@ -112,7 +112,10 @@ async function logout(
   deps.logger.info("logout");
 }
 
-/** GET /auth/status：只认 cookie（M5，Bearer 会话 token 不参与）。 */
+/**
+ * GET /auth/status：只认 cookie（M5，Bearer 会话 token 不参与）。`username` 为会话
+ * subject（password 模式即登录用户名），未登录为 null；dsh web 用它显示当前登录用户。
+ */
 function handleStatus(
   deps: PasswordEndpointsDeps,
   req: IncomingMessage,
@@ -124,14 +127,19 @@ function handleStatus(
   }
   const store = deps.sessions();
   const token = parseCookieHeader(req.headers.cookie, deps.cookieName);
-  const authenticated =
-    store !== undefined &&
-    token !== undefined &&
-    token !== "" &&
-    store.getByToken(token) !== undefined;
+  const session =
+    store !== undefined && token !== undefined && token !== ""
+      ? store.getByToken(token)
+      : undefined;
   res.setHeader("cache-control", "no-store");
   res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify({ authenticated, logoutOrder: deps.logoutOrder }));
+  res.end(
+    JSON.stringify({
+      authenticated: session !== undefined,
+      username: session?.subject ?? null,
+      logoutOrder: deps.logoutOrder,
+    }),
+  );
 }
 
 function queryOf(req: IncomingMessage): URLSearchParams {

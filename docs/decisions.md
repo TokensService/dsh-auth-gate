@@ -92,3 +92,11 @@ revokeBySubject / 登录 CSRF token / 限速与防重放持久化，M4 再评估
 不可接受；进程级 HMAC 与内存限速/防重放同一寿命模型。
 → [zh](decisions/implemented/2026-08-30-totp-signed-challenge-cookie.zh.md) ·
 [en](decisions/implemented/2026-08-30-totp-signed-challenge-cookie.en.md)
+
+## D11. /auth/status 透出登录用户名，token 模式恒 null
+
+`GET /auth/status` 新增 `username` 字段（password 模式 = 会话 subject，token 模式恒 null），
+client 在设置页退出按钮上方复用同一探针显示。**替代方案**：新增 /auth/whoami 端点；
+token 模式返回 subject 占位符。**为什么**：增量字段零破坏、零额外请求，null 三态诚实。
+→ [zh](decisions/implemented/2026-09-11-auth-status-username.zh.md) ·
+[en](decisions/implemented/2026-09-11-auth-status-username.en.md)
