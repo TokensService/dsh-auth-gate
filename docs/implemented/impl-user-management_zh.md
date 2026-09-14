@@ -16,27 +16,34 @@
 
 ## 2. 行为契约
 
-| 场景                                        | 行为                                                                                                                                           |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 无有效会话的任何调用                        | `401 {"error":"unauthorized"}`（会话 cookie 或 Bearer 会话 token；端点自校验）                                                                 |
-| 会话存储不可用                              | `503 {"error":"store_unavailable"}`                                                                                                            |
-| `GET /auth/users`                           | `200 {"users":[{username,disabled,totp,admin,current}]}`，按用户名字典序，绝不含哈希/secret；任意会话可读                                      |
-| `POST` 新用户（仅 admin）                   | 校验用户名（`USERNAME_RE`）+ 非空密码 → scrypt 哈希 → 原子重写；`201` + 用户视图                                                               |
-| `POST`/`DELETE` 非 admin 会话               | `403 forbidden`（D13：用户管理仅管理员）                                                                                                       |
-| `PATCH` 非 admin 会话                       | 仅允许改**自己的密码**；目标非己或带 `disabled`/`totp` 字段 → `403 forbidden`                                                                  |
-| `POST` 重名/非法用户名/空密码               | `409 duplicate` / `400 invalid_username` / `400 empty_password`                                                                                |
-| `PATCH` 改密码                              | 新 salt 重哈希；旧密码立即失效                                                                                                                 |
-| 用户名变更                                  | 不支持：用户名即主键，任何角色都不能经 API/页面改名（只能删除后重建）                                                                          |
-| `PATCH disabled:true` 针对自己              | `409 self_target`（防误操作；CLI 仍是逃生通道）                                                                                                |
-| `PATCH disabled:true`/`DELETE` 最后启用用户 | `409 last_enabled`（防锁死：至少保留一个启用用户）                                                                                             |
-| `PATCH totp:"enable"`                       | 生成 secret 并落盘，响应**一次性**返回 `{totpSecret,totpUri}`（已有 secret → 409 `totp_exists`）                                               |
-| `PATCH totp:"disable"`                      | 移除 secret（幂等，保留 role）                                                                                                                 |
-| `DELETE` 用户（仅 admin）                   | 从 `users.yaml` 移除；`200 {"deleted":name}`；自我删除 → `409 self_target`                                                                     |
-| 变更请求体非 JSON                           | `415 unsupported_media_type`（表单无法伪造 JSON content-type；SameSite=Lax 之上的 CSRF 层）                                                    |
-| 请求体 > 16 KiB / JSON 非法                 | `413 body_too_large` / `400 bad_json`                                                                                                          |
-| 被禁用/删除用户的在途会话                   | 会话在过期前仍有效（D8：明确不实现 `revokeBySubject`；页面上有脚注说明）；角色随记录判定——被删除 admin 的在途会话自动失去管理权（fail-closed） |
-| token 模式                                  | 端点不注册 → 落 `/auth` 兜底 `404`；设置页显示「不可用」提示                                                                                   |
-| users.yaml 读写失败                         | `503 user_store_unavailable` + error 日志                                                                                                      |
+| 场景                                         | 行为                                                                                                                                           |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 无有效会话的任何调用                         | `401 {"error":"unauthorized"}`（会话 cookie 或 Bearer 会话 token；端点自校验）                                                                 |
+| 会话存储不可用                               | `503 {"error":"store_unavailable"}`                                                                                                            |
+| `GET /auth/users`                            | `200 {"users":[{username,disabled,totp,admin,current}]}`，按用户名字典序，绝不含哈希/secret；任意会话可读                                      |
+| `POST` 新用户（仅 admin）                    | 校验用户名（`USERNAME_RE`）+ 非空密码 → scrypt 哈希 → 原子重写；`201` + 用户视图                                                               |
+| `POST`/`DELETE` 非 admin 会话                | `403 forbidden`（D13：用户管理仅管理员）                                                                                                       |
+| `PATCH` 非 admin 会话                        | 仅允许改**自己的密码**；目标非己或带 `disabled`/`totp` 字段 → `403 forbidden`                                                                  |
+| `POST` 重名/非法用户名/空密码                | `409 duplicate` / `400 invalid_username` / `400 empty_password`                                                                                |
+| `PATCH` 改密码                               | 新 salt 重哈希；旧密码立即失效                                                                                                                 |
+| 用户名变更                                   | 不支持：用户名即主键，任何角色都不能经 API/页面改名（只能删除后重建）                                                                          |
+| `PATCH disabled:true` 针对自己               | `409 self_target`（防误操作；CLI 仍是逃生通道）                                                                                                |
+| `PATCH disabled:true`/`DELETE` 最后启用用户  | `409 last_enabled`（防锁死：至少保留一个启用用户）                                                                                             |
+| `PATCH totp:"enable"`                        | 生成 secret 并落盘，响应**一次性**返回 `{totpSecret,totpUri}`（已有 secret → 409 `totp_exists`）                                               |
+| `PATCH totp:"disable"`                       | 移除 secret（幂等，保留 role）                                                                                                                 |
+| `DELETE` 用户（仅 admin）                    | 从 `users.yaml` 移除；`200 {"deleted":name}`；自我删除 → `409 self_target`                                                                     |
+| 变更请求体非 JSON                            | `415 unsupported_media_type`（表单无法伪造 JSON content-type；SameSite=Lax 之上的 CSRF 层）                                                    |
+| 请求体 > 16 KiB / JSON 非法                  | `413 body_too_large` / `400 bad_json`                                                                                                          |
+| 被禁用/删除用户的在途会话                    | 会话在过期前仍有效（D8：明确不实现 `revokeBySubject`；页面上有脚注说明）；角色随记录判定——被删除 admin 的在途会话自动失去管理权（fail-closed） |
+| token 模式                                   | 端点不注册 → 落 `/auth` 兜底 `404`；设置页显示「不可用」提示                                                                                   |
+| users.yaml 读写失败                          | `503 user_store_unavailable` + error 日志                                                                                                      |
+| `POST /auth/users/import {text}`（仅 admin） | 本地文件原文逐行解析 `用户名,密码`（空行/`#` 注释跳过，首个逗号切分）；全量校验 → 原子写入；`201 {created, users}`                             |
+| `POST /auth/users/import {file}`（仅 admin） | 读 `<usersDir>/imports/<name>`（basename 白名单 + `.txt`，拒绝路径遍历）后同 `{text}` 流程                                                     |
+| `GET /auth/users/import`（仅 admin）         | `200 {files:[{name,size}]}`：列出 imports/ 目录候选 txt（字典序）；目录不存在 → 空表                                                           |
+| 导入内容有非法行                             | `400 invalid_entry` + `{failures:[{line,username,code}]}`——all-or-nothing，一行不写（code 复用 invalid_username/empty_password/duplicate）     |
+| 导入体 `{text}`/`{file}` 缺失或同时出现      | `400 invalid_field`；空内容（只有空行/注释）→ `400 no_entries`；超 100 条 → `400 too_many_entries`                                             |
+| 服务端导入文件缺失/非 txt/超 256 KiB         | `404 import_file_not_found` / `404` / `413 import_file_too_large`                                                                              |
+| 导入请求体 > 256 KiB                         | `413 body_too_large`（仅导入路由放宽上限；`/auth/users` 其余方法仍 16 KiB）                                                                    |
 
 fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做会话校验（cookie
 优先、Bearer 会话 token 兜底——与门同一个会话模型）。所有错误响应都是带稳定
@@ -68,6 +75,13 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   `403 forbidden`）。页面按 `users[].admin` + `current` 降级 UI（藏添加表单
   与他人行的操作按钮），但 API 才是权威；所有写路径重建记录时必须保留
   `role`（TOTP disable 曾逐字段重建，已修）。
+- **D-UM-9**（D14）：批量导入走独立 exact 路由 `/auth/users/import`（GET 列
+  文件 / POST 导入），仅 admin。两种文件浏览：本地 = 浏览器 FileReader 读原文
+  随 `{text}` 提交（零服务端文件系统暴露）；服务端 = 固定沙箱
+  `<usersDir>/imports/` 内的 `.txt`（basename 白名单，任意路径输入被否决——
+  不给 web 面任意文件读）。服务端统一解析 `用户名,密码` 行（行号明细可机读），
+  all-or-nothing 原子写；上限 256 KiB / 100 条（scrypt 总成本秒级）。导入用户
+  一律普通角色（角色 CLI-only，D13）。
 
 ## 4. 部署说明
 
@@ -78,10 +92,14 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   全部 403——先经 CLI 授予：`dsh-auth user admin enable <name>`（或
   `dsh-auth user add <name> --password-stdin --admin` 新建管理员）。
   `dsh-auth user list` 会以 `(admin)` / `(admin, disabled)` 标记角色。
+- **服务端导入**：把 txt 放进 `<users.yaml 同级>/imports/`（如
+  `$DSH_HOME/auth/imports/team.txt`）即可在页面「服务器文件」模式里看到；
+  目录由部署者自建（插件不主动创建），权限建议与 users.yaml 同级（600/目录 700）。
 - 页面启用 TOTP 时，base32 secret + otpauth URI 只在响应里出现一次，管理员
   手动录入认证器（不出二维码图，保持 bundle 自包含）。
 - 审计：增/改/删写 `user <name> added|updated|deleted via /auth/users` info
-  日志；secret/哈希永不落日志。
+  日志；导入写 `imported <n> users via /auth/users/import (...)`；
+  secret/哈希/密码永不落日志。
 
 ## 5. 测试
 
@@ -91,19 +109,27 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   禁用/启用、自我/最后启用保护、TOTP 启停、删除、非 admin 权限矩阵：仅自己
   的密码可改/其余 403/被删 admin 在途会话降级）。共享基座：
   `test/user-admin-harness.ts`（临时目录真实 `users.yaml` 往返 + 内存会话表）。
-- 集成：`src/integration.users.test.ts`——真实栈（storage-json +
-  storage-domain + WebServer + 插件）：未认证 401、带 `current`/`admin` 标记的
+- 导入：`src/features/password/user-admin-import.test.ts`（parseImportText 纯
+  函数行级用例 + GET 列表白名单/401/403 + POST text/file 成功、all-or-nothing
+  行号明细、重名、no_entries/too_many_entries/invalid_field、404/413）。
+- 集成：`src/integration.users.test.ts` 与 `integration.users-import.test.ts`
+  ——真实栈（storage-json + storage-domain + WebServer + 插件，共享基座
+  `integration-users-helpers.ts`）：未认证 401、带 `current`/`admin` 标记的
   列表、创建后真实登录、重名 409、自我目标 409、删除持久化、405/415、非 admin
-  会话 403 矩阵 + 自助改密后真实重登录。
-- client：`src/client/users-section.test.tsx`（三态 + 变更 + TOTP 展示 +
-  非 admin 降级 UI）；`src/client/logout-action.test.tsx` 扩展覆盖 section
-  注册与合并词典。
-- CLI/文件：`src/cli.test.ts`（`--admin`、`user admin enable/disable`、list
-  角色标记）与 `src/shared/users-file.test.ts`（role 解析/拒绝非法值/写读往返）。
+  403 矩阵；导入：text 导入后真实登录、imports/ 目录列举与 file 导入、
+  `../users.yaml` 遍历 404、非 admin 双动词 403。
+- client：`src/client/users-section.test.tsx`（三态 + 变更 + TOTP 展示）、
+  `users-section.nonadmin.test.tsx`（非 admin 降级 UI）、
+  `user-import.test.tsx`（面板显隐、本地文件原文上传、服务端列表/导入、
+  行号失败明细本地化）；`logout-action.test.tsx` 覆盖 section 注册与合并词典。
+- CLI/文件：`src/cli.test.ts` 与 `cli.admin.test.ts`（`--admin`、
+  `user admin enable/disable`、list 角色标记）；`src/shared/users-file.test.ts`
+  （role 解析/拒绝非法值/写读往返）。
 
 ## 6. 变更记录
 
-| commit       | 内容                                                            |
-| ------------ | --------------------------------------------------------------- |
-| 5508640      | feat: 用户管理设置页 + `/auth/users` API                        |
-| （本次变更） | feat: admin 角色与权限矩阵（D13），CLI 角色管理，页面按角色降级 |
+| commit       | 内容                                                                              |
+| ------------ | --------------------------------------------------------------------------------- |
+| 5508640      | feat: 用户管理设置页 + `/auth/users` API                                          |
+| dbbd507      | feat: admin 角色与权限矩阵（D13），CLI 角色管理，页面按角色降级                   |
+| （本次变更） | feat: txt 批量导入（D14），本地/服务端双文件浏览，`/auth/users/import` 沙箱化导入 |

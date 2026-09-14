@@ -28,7 +28,12 @@ export type UserAdminErrorCode =
   | "not_found"
   | "self_target"
   | "last_enabled"
-  | "totp_exists";
+  | "totp_exists"
+  | "invalid_entry"
+  | "no_entries"
+  | "too_many_entries"
+  | "import_file_not_found"
+  | "import_file_too_large";
 
 export interface UserAdminDeps {
   /** 注册路由（index.ts 传入包装后的 server.register；/auth 白名单放行，端点自校验会话）。 */
@@ -71,6 +76,26 @@ export function viewOf(username: string, record: UserRecord, subject: string): U
 /** subject 是否为管理员（D13）：users.yaml 里 `role: admin`；缺省/无记录均非管理员。 */
 export function isAdmin(snapshot: UsersSnapshot, subject: string): boolean {
   return snapshot.users.get(subject)?.role === "admin";
+}
+
+/**
+ * 会话门 + 管理员门（D13/D14）：store 缺失 503、无会话 401、非 admin 403；
+ * 通过返回 subject 与已加载快照（调用方继续用同一快照做写操作）。
+ */
+export async function requireAdmin(
+  deps: UserAdminDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<{ subject: string; snapshot: UsersSnapshot } | undefined> {
+  const subject = requireSubject(deps, req, res);
+  if (subject === undefined) return undefined;
+  const loaded = await loadUsersOr503(deps, res);
+  if (loaded === undefined) return undefined;
+  if (!isAdmin(loaded.snapshot, subject)) {
+    sendCode(res, 403, "forbidden");
+    return undefined;
+  }
+  return { subject, snapshot: loaded.snapshot };
 }
 
 export function enabledCount(snapshot: UsersSnapshot): number {
@@ -120,9 +145,10 @@ function sessionOf(
 export async function readJsonOrRespond(
   req: IncomingMessage,
   res: ServerResponse,
+  limit = JSON_BODY_LIMIT,
 ): Promise<Record<string, unknown> | undefined> {
   try {
-    return await readJsonBody(req);
+    return await readJsonBody(req, limit);
   } catch (error) {
     const failed = error as { status?: number; code?: string };
     if (typeof failed.status !== "number" || failed.code === undefined) throw error;
@@ -133,7 +159,7 @@ export async function readJsonOrRespond(
 }
 
 /** 与 parseFormBody 同纪律：415/413 带 status 抛出；流异常（abort 等）不捕获。 */
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJsonBody(req: IncomingMessage, limit: number): Promise<Record<string, unknown>> {
   const rawType = req.headers["content-type"];
   const mediaType =
     typeof rawType === "string" ? rawType.split(";")[0]?.trim().toLowerCase() : undefined;
@@ -148,7 +174,7 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
   for await (const chunk of req) {
     const buffer = chunk as Buffer;
     size += buffer.length;
-    if (size > JSON_BODY_LIMIT) {
+    if (size > limit) {
       throw Object.assign(new Error("request body too large"), {
         status: 413,
         code: "body_too_large",

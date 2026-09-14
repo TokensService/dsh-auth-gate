@@ -120,3 +120,14 @@ admin，PATCH 非 admin 只能改自己的密码（其余 → `403 forbidden`）
 爆炸半径钉死在 admin 自己的会话。
 → [zh](decisions/implemented/2026-09-14-user-admin-role.zh.md) ·
 [en](decisions/implemented/2026-09-14-user-admin-role.en.md)
+
+## D14. txt 批量导入用户：本地/服务端双模式 + 固定 imports/ 沙箱
+
+`POST /auth/users/import` 收 `{text}`（浏览器读本地文件原文）或 `{file}`
+（服务端 `<usersDir>/imports/` 内 `.txt`，basename 白名单防遍历）；逐行
+`用户名,密码`，全量校验、行号明细、all-or-nothing 原子写；仅 admin；
+256 KiB/100 条上限。**替代方案**：任意路径输入（任意文件读）；multipart
+上传；best-effort 逐条跳过；txt 带 role 列；客户端预解析。**为什么**：
+本地模式零文件系统暴露，服务端模式用固定目录换便利，失败可机读可重传。
+→ [zh](decisions/implemented/2026-09-14-txt-batch-user-import.zh.md) ·
+[en](decisions/implemented/2026-09-14-txt-batch-user-import.en.md)

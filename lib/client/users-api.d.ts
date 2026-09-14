@@ -36,4 +36,36 @@ export declare function listUsers(): Promise<ListResult>;
 export declare function createUser(username: string, password: string): Promise<MutationResult>;
 export declare function updateUser(update: UserUpdate): Promise<MutationResult>;
 export declare function deleteUser(username: string): Promise<MutationResult>;
+/** 服务端导入目录里的候选文件（`imports/*.txt`）。 */
+export interface ServerImportFile {
+    name: string;
+    size: number;
+}
+/** 批量导入的单行失败明细（host ImportFailure 镜像）。 */
+export interface ImportFailure {
+    line: number;
+    username: string;
+    code: string;
+}
+export interface ImportResult {
+    ok: boolean;
+    status: number;
+    code: string;
+    created?: number;
+    failures?: ImportFailure[];
+}
+export type ServerFilesResult = {
+    ok: true;
+    files: ServerImportFile[];
+} | {
+    ok: false;
+    status: number;
+    code: string;
+};
+/** GET /auth/users/import：服务端导入目录（imports/）里的 txt 列表。 */
+export declare function listServerImportFiles(): Promise<ServerFilesResult>;
+/** POST 导入：本地文件原文（{text}）。 */
+export declare function importUsersText(text: string): Promise<ImportResult>;
+/** POST 导入：服务端 imports/ 目录内文件（{file}）。 */
+export declare function importUsersServerFile(name: string): Promise<ImportResult>;
 //# sourceMappingURL=users-api.d.ts.map

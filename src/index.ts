@@ -7,7 +7,9 @@ import {
   PasswordGate,
   registerPasswordEndpoints,
   registerUserAdminEndpoints,
+  registerUserImportEndpoints,
   verifyPassword,
+  type UserAdminDeps,
 } from "./features/password/index.js";
 import {
   generateTotpSecret,
@@ -222,9 +224,9 @@ function mountAuthEndpoints(
     logoutOrder: config.logoutOrder,
     logger: log,
   });
-  // 用户管理 API（password 模式专属）：/auth 白名单内，端点自做会话校验；
-  // TOTP 能力按 D9 模式从 features/totp 装配注入（同层互禁）。
-  const disposeUserAdmin = registerUserAdminEndpoints({
+  // 用户管理 + 批量导入 API（password 模式专属）：/auth 白名单内，端点自做会话校验；
+  // TOTP 能力按 D9 模式从 features/totp 装配注入（同层互禁）；两组端点共享同一 deps。
+  const userAdminDeps: UserAdminDeps = {
     register: (route) => server.register(route),
     sessions: () => auth.sessions,
     cookieName: config.cookieName,
@@ -234,8 +236,11 @@ function mountAuthEndpoints(
     generateTotpSecret,
     totpUri,
     logger: log,
-  });
+  };
+  const disposeUserAdmin = registerUserAdminEndpoints(userAdminDeps);
+  const disposeUserImport = registerUserImportEndpoints(userAdminDeps);
   return () => {
+    disposeUserImport();
     disposeUserAdmin();
     disposeLogin();
   };

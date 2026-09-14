@@ -40,6 +40,13 @@ and delete users from the browser.
 | Disabled/deleted user with live sessions       | sessions stay valid until expiry (D8: `revokeBySubject` deliberately not implemented; shown in the UI); the role is judged from the record - a deleted admin's live session loses management rights (fail-closed) |
 | Token mode                                     | endpoint not registered -> `/auth` catch-all `404`; the settings page shows an "unavailable" notice                                                                                                               |
 | users.yaml read/write failure                  | `503 user_store_unavailable` + error log                                                                                                                                                                          |
+| `POST /auth/users/import {text}` (admin only)  | raw local file content parsed line by line as `username,password` (empty/`#` lines skipped, split at the first comma); full validation -> atomic write; `201 {created, users}`                                    |
+| `POST /auth/users/import {file}` (admin only)  | reads `<usersDir>/imports/<name>` (basename whitelist + `.txt`, traversal rejected) then same flow as `{text}`                                                                                                    |
+| `GET /auth/users/import` (admin only)          | `200 {files:[{name,size}]}`: candidate txt files in imports/ (sorted); missing dir -> empty list                                                                                                                  |
+| Import content with invalid lines              | `400 invalid_entry` + `{failures:[{line,username,code}]}` - all-or-nothing, nothing is written (codes reuse invalid_username/empty_password/duplicate)                                                            |
+| Import body `{text}`/`{file}` missing or both  | `400 invalid_field`; empty content (only blanks/comments) -> `400 no_entries`; over 100 entries -> `400 too_many_entries`                                                                                         |
+| Server import file missing/non-txt/over 256KiB | `404 import_file_not_found` / `404` / `413 import_file_too_large`                                                                                                                                                 |
+| Import request body > 256 KiB                  | `413 body_too_large` (raised cap only on the import route; other `/auth/users` methods stay at 16 KiB)                                                                                                            |
 
 Fail-closed scope: the endpoint lives under the `/auth` gate whitelist, so it
 re-implements session validation itself (cookie first, Bearer session token as
@@ -81,6 +88,17 @@ with stable machine codes; the client localizes by code, never by message text.
   `current` (hiding the add form and other rows' action buttons), but the
   API is the authority; every write path that rebuilds a record must
   preserve `role` (TOTP-disable rebuilt field-by-field and was fixed).
+- **D-UM-9** (D14): batch import lives on its own exact route
+  `/auth/users/import` (GET lists files / POST imports), admin only. Two
+  browsing modes: local = the browser reads the file with FileReader and
+  submits the raw text as `{text}` (zero server filesystem exposure);
+  server = a fixed sandbox of `.txt` files inside `<usersDir>/imports/`
+  (basename whitelist; free-form path input was rejected - no arbitrary
+  file read from the web). The server parses `username,password` lines in
+  both modes (line-numbered, machine-readable failures), writes
+  all-or-nothing atomically; caps are 256 KiB / 100 entries (total scrypt
+  cost stays in seconds). Imported users are always regular users (roles
+  are CLI-only, D13).
 
 ## 4. Deployment notes
 
@@ -95,11 +113,16 @@ with stable machine codes; the client localizes by code, never by message text.
   via the CLI first: `dsh-auth user admin enable <name>` (or create one with
   `dsh-auth user add <name> --password-stdin --admin`). `dsh-auth user list`
   marks roles as `(admin)` / `(admin, disabled)`.
+- **Server-side import**: drop a txt into `<users.yaml sibling>/imports/`
+  (e.g. `$DSH_HOME/auth/imports/team.txt`) and it appears in the page's
+  "Server file" mode; the directory is created by the operator (the plugin
+  never creates it) - keep permissions on par with users.yaml (600/700).
 - TOTP enable via the page prints the base32 secret + otpauth URI once in the
   response; the admin copies it into the authenticator manually (no QR image,
   keeping the bundle self-contained).
 - Audit: add/update/delete write `user <name> added|updated|deleted via
-/auth/users` info logs; secrets/hashes are never logged.
+/auth/users` info logs; imports write `imported <n> users via
+/auth/users/import (...)`; secrets/hashes/passwords are never logged.
 
 ## 5. Tests
 
@@ -112,21 +135,32 @@ with stable machine codes; the client localizes by code, never by message text.
   admin's live session degrades). Shared harness:
   `test/user-admin-harness.ts` (real `users.yaml` round-trip in a temp dir +
   in-memory session table).
-- Integration: `src/integration.users.test.ts` - real stack
-  (storage-json + storage-domain + WebServer + plugin): unauthenticated 401,
-  list with `current`/`admin` markers, create -> real sign-in, duplicate 409,
-  self-target 409, delete persistence, 405/415, the non-admin 403 matrix +
-  self-service password change followed by a real re-login.
+- Import: `src/features/password/user-admin-import.test.ts` (parseImportText
+  pure line-level cases + GET list whitelist/401/403 + POST text/file
+  success, all-or-nothing per-line details, duplicates,
+  no_entries/too_many_entries/invalid_field, 404/413).
+- Integration: `src/integration.users.test.ts` and
+  `integration.users-import.test.ts` - real stack (storage-json +
+  storage-domain + WebServer + plugin; shared base
+  `integration-users-helpers.ts`): unauthenticated 401, list with
+  `current`/`admin` markers, create -> real sign-in, duplicate 409,
+  self-target 409, delete persistence, 405/415, the non-admin 403 matrix;
+  import: real sign-in after a text import, imports/ listing + file import,
+  `../users.yaml` traversal 404, non-admin 403 on both verbs.
 - Client: `src/client/users-section.test.tsx` (states + mutations + TOTP
-  reveal + the degraded non-admin UI); `src/client/logout-action.test.tsx`
-  extended for the section registration and merged dictionaries.
-- CLI/file: `src/cli.test.ts` (`--admin`, `user admin enable/disable`, list
-  role markers) and `src/shared/users-file.test.ts` (role parsing / rejecting
-  invalid values / write-read round-trip).
+  reveal), `users-section.nonadmin.test.tsx` (degraded non-admin UI),
+  `user-import.test.tsx` (panel visibility, local raw-text upload, server
+  list/import, localized per-line failures); `logout-action.test.tsx`
+  covers the section registration and merged dictionaries.
+- CLI/file: `src/cli.test.ts` and `cli.admin.test.ts` (`--admin`,
+  `user admin enable/disable`, list role markers);
+  `src/shared/users-file.test.ts` (role parsing / rejecting invalid values /
+  write-read round-trip).
 
 ## 6. Change log
 
-| commit        | content                                                                          |
-| ------------- | -------------------------------------------------------------------------------- |
-| 5508640       | feat: user management settings page + `/auth/users` API                          |
-| (this change) | feat: admin role + permission matrix (D13), CLI role management, role-aware page |
+| commit        | content                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| 5508640       | feat: user management settings page + `/auth/users` API                                     |
+| dbbd507       | feat: admin role + permission matrix (D13), CLI role management, role-aware page            |
+| (this change) | feat: txt batch import (D14), local/server dual file browsing, `/auth/users/import` sandbox |

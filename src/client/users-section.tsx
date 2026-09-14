@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import type { LogoutTranslate } from "./logout-action.tsx";
 import { AddUserForm, UserRow } from "./user-rows.tsx";
+import { ImportPanel } from "./user-import.tsx";
 import { TotpReveal, type TotpRevealData } from "./totp-reveal.tsx";
 import {
   createUser,
@@ -10,6 +11,7 @@ import {
   type AdminUser,
   type MutationResult,
 } from "./users-api.ts";
+import { userErrorText } from "./users-dict.ts";
 
 type LoadState = "loading" | "unavailable" | "error" | "ready";
 
@@ -113,6 +115,7 @@ export function SettingsUsersSection({ t }: SettingsUsersSectionProps) {
           reveal={reveal}
           busy={busy}
           onDismissReveal={() => setReveal(null)}
+          onChanged={() => void refresh()}
           onAdd={(u, p) => run(() => createUser(u, p)).then((r) => r.ok)}
           onPassword={(u, p) =>
             run(() => updateUser({ username: u, password: p })).then((r) => r.ok)
@@ -139,6 +142,7 @@ interface ReadyPanelProps {
   reveal: TotpRevealData | null;
   busy: boolean;
   onDismissReveal: () => void;
+  onChanged: () => void;
   onAdd: (username: string, password: string) => Promise<boolean>;
   onPassword: (username: string, password: string) => Promise<boolean>;
   onToggleDisabled: (user: AdminUser) => Promise<boolean>;
@@ -146,14 +150,14 @@ interface ReadyPanelProps {
   onTotp: (user: AdminUser) => Promise<boolean>;
 }
 
-/** ready 态主体：错误条 + TOTP 展示块 + 用户行列表 + 添加表单（仅 admin）+ 脚注。 */
+/** ready 态主体：错误条 + TOTP 展示块 + 用户行列表 + 添加/导入表单（仅 admin）+ 脚注。 */
 function ReadyPanel(props: ReadyPanelProps) {
   const { tr, users, isAdmin, errorCode, reveal, busy } = props;
   return (
     <>
       {errorCode !== "" && (
         <div style={ERROR_STYLE} role="alert">
-          {errorText(tr, errorCode)}
+          {userErrorText(tr, errorCode)}
         </div>
       )}
       {reveal !== null && <TotpReveal reveal={reveal} t={tr} onDismiss={props.onDismissReveal} />}
@@ -177,6 +181,7 @@ function ReadyPanel(props: ReadyPanelProps) {
         </div>
       )}
       {isAdmin && <AddUserForm t={tr} busy={busy} onAdd={props.onAdd} />}
+      {isAdmin && <ImportPanel t={tr} onChanged={props.onChanged} />}
       <div style={SUB_STYLE}>{tr(isAdmin ? "users.note" : "users.noteNonAdmin")}</div>
     </>
   );
@@ -195,11 +200,4 @@ function SectionState(props: { state: LoadState; t: Translate; onRetry: () => vo
       </button>
     </div>
   );
-}
-
-/** 错误码 → 本地化文案；码缺失（词典未覆盖）时回落 generic。 */
-function errorText(t: Translate, code: string): string {
-  const key = `users.error.${code}`;
-  const text = t(key);
-  return text === key ? t("users.error.unknown") : text;
 }

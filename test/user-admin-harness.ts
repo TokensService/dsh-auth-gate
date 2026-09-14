@@ -17,6 +17,10 @@ import {
   USERS_PATH,
   type UserAdminDeps,
 } from "../src/features/password/user-admin-endpoints.js";
+import {
+  registerUserImportEndpoints,
+  USERS_IMPORT_PATH,
+} from "../src/features/password/user-admin-import.js";
 
 /** 共享内存 KvTable（SessionStore 测试基座；与 src 内各测试的 MemTable 同构）。 */
 export class MemTable implements KvTable<string, Session> {
@@ -111,12 +115,17 @@ export function makeReq(options: {
 export interface UserAdminHarness {
   deps: UserAdminDeps;
   handler: HttpHandler;
+  importHandler: HttpHandler;
   store: SessionStore;
   usersFile: string;
+  /** 临时目录根；服务端导入目录为其下 `imports/`。 */
+  dir: string;
+  importsDir: string;
   logs: { level: string; message: unknown }[];
   /** 以指定用户身份建会话（默认 alice），返回 Cookie 头值。 */
   cookieFor(username?: string): Promise<string>;
   call(req: IncomingMessage): Promise<FakeRes>;
+  callImport(req: IncomingMessage): Promise<FakeRes>;
   snapshot(): Promise<UsersSnapshot>;
   cleanup(): void;
 }
@@ -170,20 +179,32 @@ export async function makeUserAdminHarness(options?: {
     },
   };
   registerUserAdminEndpoints(deps);
+  registerUserImportEndpoints(deps);
   const route = routes.find((r) => r.kind === "exact" && r.path === USERS_PATH);
   if (route === undefined) throw new Error("users route not registered");
+  const importRoute = routes.find((r) => r.kind === "exact" && r.path === USERS_IMPORT_PATH);
+  if (importRoute === undefined) throw new Error("users import route not registered");
   const handler = route.handler;
+  const importHandler = importRoute.handler;
   return {
     deps,
     handler,
+    importHandler,
     store,
     usersFile,
+    dir,
+    importsDir: join(dir, "imports"),
     logs,
     cookieFor: async (username = "alice") =>
       `dsh_auth=${(await store.create(username, 60_000)).token}`,
     call: async (req) => {
       const res = makeRes();
       await handler(req, res.res);
+      return res;
+    },
+    callImport: async (req) => {
+      const res = makeRes();
+      await importHandler(req, res.res);
       return res;
     },
     snapshot: async () => (await loadUsersFile(usersFile)).snapshot,

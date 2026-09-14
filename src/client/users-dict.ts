@@ -45,8 +45,25 @@ export const USERS_DICT_ZH: Record<string, string> = {
   "users.error.last_enabled": "至少要保留一个可用用户。",
   "users.error.totp_exists": "该用户已有 TOTP 密钥（先停用再重新启用）。",
   "users.error.user_store_unavailable": "用户文件暂不可用，请稍后再试。",
+  "users.error.invalid_entry": "文件内容有非法行，未导入任何用户（见下方明细）。",
+  "users.error.no_entries": "没有可导入的条目。",
+  "users.error.too_many_entries": "单次最多导入 100 个用户。",
+  "users.error.import_file_not_found": "服务器上找不到该文件（仅支持 imports/ 目录内的 .txt）。",
+  "users.error.import_file_too_large": "文件超过 256 KiB 上限。",
+  "users.error.body_too_large": "内容超过大小上限。",
   "users.error.network": "网络错误，请稍后再试。",
   "users.error.unknown": "操作失败。",
+  "users.importTitle": "批量导入（txt）",
+  "users.importHint": "每行一个：用户名,密码；空行与 # 开头的行会跳过。",
+  "users.importModeLocal": "本地文件",
+  "users.importModeServer": "服务器文件",
+  "users.importChooseFile": "选择 txt 文件",
+  "users.importRefresh": "刷新列表",
+  "users.importNoServerFiles": "服务器 imports/ 目录里还没有 .txt 文件。",
+  "users.importRun": "导入",
+  "users.importSuccess": "成功导入 {n} 个用户。",
+  "users.importFailures": "失败明细：",
+  "users.importLine": "第 {line} 行",
 };
 
 export const USERS_DICT_EN: Record<string, string> = {
@@ -94,6 +111,34 @@ export const USERS_DICT_EN: Record<string, string> = {
   "users.error.last_enabled": "Keep at least one enabled user.",
   "users.error.totp_exists": "User already has a TOTP secret (disable it first).",
   "users.error.user_store_unavailable": "User store unavailable; try again later.",
+  "users.error.invalid_entry": "The file contains invalid lines; nothing was imported (see below).",
+  "users.error.no_entries": "Nothing to import.",
+  "users.error.too_many_entries": "At most 100 users per import.",
+  "users.error.import_file_not_found":
+    "File not found on the server (only .txt inside imports/ is allowed).",
+  "users.error.import_file_too_large": "File exceeds the 256 KiB limit.",
+  "users.error.body_too_large": "Content exceeds the size limit.",
   "users.error.network": "Network error; try again later.",
   "users.error.unknown": "Operation failed.",
+  "users.importTitle": "Batch import (txt)",
+  "users.importHint": "One per line: username,password; empty lines and # comments are skipped.",
+  "users.importModeLocal": "Local file",
+  "users.importModeServer": "Server file",
+  "users.importChooseFile": "Choose a txt file",
+  "users.importRefresh": "Refresh list",
+  "users.importNoServerFiles": "No .txt files in the server's imports/ directory yet.",
+  "users.importRun": "Import",
+  "users.importSuccess": "Imported {n} users.",
+  "users.importFailures": "Failures:",
+  "users.importLine": "line {line}",
 };
+
+/**
+ * 错误码 → 本地化文案；码缺失（词典未覆盖）时回落 generic。
+ * users-section 与 user-import 共用。
+ */
+export function userErrorText(t: (key: string) => string, code: string): string {
+  const key = `users.error.${code}`;
+  const text = t(key);
+  return text === key ? t("users.error.unknown") : text;
+}

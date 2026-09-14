@@ -6,3 +6,4 @@ export * from "./password-endpoints.js";
 export * from "./password-gate.js";
 export * from "./password-login.js";
 export * from "./user-admin-endpoints.js";
+export * from "./user-admin-import.js";
