@@ -25,6 +25,9 @@ tables).
   password flow: users.yaml + scrypt + rate limiting + `dsh-auth user` CLI).
   **M3 execution starts by reading `docs/handoff/handoff-m2.md`** (environment facts
   still valid) and finishes by writing `docs/handoff/handoff-m3.md` for M4.
+- **User management page spec**: `docs/implemented/impl-user-management.md`
+  (settings-modal User Management page + session-guarded `/auth/users` JSON API;
+  password mode only; ADR D12).
 - **Agent skills** (`.agents/skills/`, auto-discovered by dsh):
   - `dsh-auth-code-review` — review checklist for changes here: enforcement,
     lifecycle, disposal, real-entry-path tests, prose contracts.

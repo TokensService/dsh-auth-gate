@@ -1,0 +1,1 @@
+{"version":3,"file":"user-admin-endpoints.d.ts","sourceRoot":"","sources":["../../../src/features/password/user-admin-endpoints.ts"],"names":[],"mappings":"AAGA,OAAO,EAQL,KAAK,aAAa,EACnB,MAAM,wBAAwB,CAAC;AAGhC,YAAY,EAAE,aAAa,EAAE,kBAAkB,EAAE,MAAM,wBAAwB,CAAC;AAEhF,6CAA6C;AAC7C,eAAO,MAAM,UAAU,gBAAgB,CAAC;AAExC;;;;;GAKG;AACH,wBAAgB,0BAA0B,CAAC,IAAI,EAAE,aAAa,GAAG,MAAM,IAAI,CAM1E"}

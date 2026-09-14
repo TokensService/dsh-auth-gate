@@ -6,10 +6,21 @@ import { wrapServer, type Gate, type WrappableServer } from "./gate/index.js";
 import {
   PasswordGate,
   registerPasswordEndpoints,
+  registerUserAdminEndpoints,
   verifyPassword,
 } from "./features/password/index.js";
-import { TotpReplayGuard, verifyTotpCode } from "./features/totp/index.js";
-import { LoginRateLimiter, defaultUsersFilePath, loadUsersFile } from "./shared/index.js";
+import {
+  generateTotpSecret,
+  totpUri,
+  TotpReplayGuard,
+  verifyTotpCode,
+} from "./features/totp/index.js";
+import {
+  LoginRateLimiter,
+  defaultUsersFilePath,
+  loadUsersFile,
+  writeUsersFile,
+} from "./shared/index.js";
 import { assertGuarded } from "./gate/index.js";
 import { makeLaunchTokenBridge } from "./launch-token-bridge.js";
 import { sessionDomainSpec, SessionStore } from "./session/index.js";
@@ -177,40 +188,57 @@ function mountAuthEndpoints(
     warn(message: unknown): void;
   },
 ): () => void {
-  return config.mode === "password"
-    ? registerPasswordEndpoints({
-        register: (route) => server.register(route), // 包装后的 register（增量保险路径）
-        sessions: () => auth.sessions,
-        cookieName: config.cookieName,
-        cookieSecure: config.cookieSecure,
-        sessionTtl: config.sessionTtl,
-        usersPath,
-        loadUsers: () => loadUsersFile(usersPath),
-        verify: verifyPassword,
-        limiter,
-        totpMode: config.totp,
-        verifyTotp: (secretB32, code, nowMs) => verifyTotpCode(secretB32, code, nowMs),
-        replayCheck: (username, counter, code) =>
-          replayGuard.checkAndRecord(username, counter, code),
-        now: Date.now,
-        challengeMacKey,
-        launchTokenBridge,
-        logoutOrder: config.logoutOrder,
-        logger: log,
-      })
-    : registerAuthEndpoints({
-        register: (route) => server.register(route),
-        sessions: () => auth.sessions,
-        cookieName: config.cookieName,
-        cookieSecure: config.cookieSecure,
-        sessionTtl: config.sessionTtl,
-        logoutOrder: config.logoutOrder,
-        validateToken: async (token) => {
-          const stored = await (resolveToken ?? (() => Promise.resolve(undefined)))();
-          return stored !== undefined && safeEqual(token, stored);
-        },
-        logger: log,
-      });
+  if (config.mode !== "password") {
+    return registerAuthEndpoints({
+      register: (route) => server.register(route),
+      sessions: () => auth.sessions,
+      cookieName: config.cookieName,
+      cookieSecure: config.cookieSecure,
+      sessionTtl: config.sessionTtl,
+      logoutOrder: config.logoutOrder,
+      validateToken: async (token) => {
+        const stored = await (resolveToken ?? (() => Promise.resolve(undefined)))();
+        return stored !== undefined && safeEqual(token, stored);
+      },
+      logger: log,
+    });
+  }
+  const disposeLogin = registerPasswordEndpoints({
+    register: (route) => server.register(route), // 包装后的 register（增量保险路径）
+    sessions: () => auth.sessions,
+    cookieName: config.cookieName,
+    cookieSecure: config.cookieSecure,
+    sessionTtl: config.sessionTtl,
+    usersPath,
+    loadUsers: () => loadUsersFile(usersPath),
+    verify: verifyPassword,
+    limiter,
+    totpMode: config.totp,
+    verifyTotp: (secretB32, code, nowMs) => verifyTotpCode(secretB32, code, nowMs),
+    replayCheck: (username, counter, code) => replayGuard.checkAndRecord(username, counter, code),
+    now: Date.now,
+    challengeMacKey,
+    launchTokenBridge,
+    logoutOrder: config.logoutOrder,
+    logger: log,
+  });
+  // 用户管理 API（password 模式专属）：/auth 白名单内，端点自做会话校验；
+  // TOTP 能力按 D9 模式从 features/totp 装配注入（同层互禁）。
+  const disposeUserAdmin = registerUserAdminEndpoints({
+    register: (route) => server.register(route),
+    sessions: () => auth.sessions,
+    cookieName: config.cookieName,
+    usersPath,
+    loadUsers: () => loadUsersFile(usersPath),
+    writeUsers: (snapshot) => writeUsersFile(usersPath, snapshot),
+    generateTotpSecret,
+    totpUri,
+    logger: log,
+  });
+  return () => {
+    disposeUserAdmin();
+    disposeLogin();
+  };
 }
 
 /**

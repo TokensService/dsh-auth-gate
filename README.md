@@ -56,6 +56,14 @@ codebase. Solid engineering worth building on.
   After `dsh plugin add` the binary lives inside the profile and must be called
   through it — see [Quick start](#quick-start).
 
+- **A settings page for user management.** In password mode, the dsh settings
+  modal gains a **User Management** page: list every user (with disabled/TOTP
+  status and a "you" marker), add users, change passwords, disable or re-enable
+  accounts, manage TOTP secrets and delete users. It talks to a session-guarded
+  `/auth/users` API and refuses foot-guns like disabling yourself or removing
+  the last enabled account. (Token mode has no users, so the page shows an
+  "unavailable" notice there.)
+
 ## Quick start
 
 ```sh

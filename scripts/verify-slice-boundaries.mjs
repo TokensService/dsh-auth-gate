@@ -51,6 +51,7 @@ const ROOT_FILES = new Set([
   "integration.session.test.ts",
   "integration.totp.test.ts",
   "integration.totp-hardening.test.ts",
+  "integration.users.test.ts",
   "integration-totp-helpers.ts",
   "guard-proxy-deny.test.ts",
 ]);

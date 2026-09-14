@@ -100,3 +100,12 @@ client 在设置页退出按钮上方复用同一探针显示。**替代方案**
 token 模式返回 subject 占位符。**为什么**：增量字段零破坏、零额外请求，null 三态诚实。
 → [zh](decisions/implemented/2026-09-11-auth-status-username.zh.md) ·
 [en](decisions/implemented/2026-09-11-auth-status-username.en.md)
+
+## D12. 用户管理走设置页 + 会话自校验的 /auth/users API
+
+设置面板新增「用户管理」整页（`settings.section`），API 留在 `/auth` 白名单内自做
+会话校验；JSON-only 变更 + 自我/最后启用保护。**替代方案**：dsh RPC 通道（特权方法
+loopback-only）；端点挂 `/auth` 外让门守卫；section order 可配置。**为什么**：
+零上游耦合、零新依赖、零新配置，CSRF 与误操作各有收口。
+→ [zh](decisions/implemented/2026-09-14-user-management-settings-page.zh.md) ·
+[en](decisions/implemented/2026-09-14-user-management-settings-page.en.md)
