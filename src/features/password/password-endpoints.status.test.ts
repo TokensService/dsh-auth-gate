@@ -173,7 +173,7 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ method: "GET", url: "/auth/status", cookie: `dsh_auth=${token}` }), res.res);
     expect(res.status).toBe(200);
-    expect(res.body).toBe('{"authenticated":true,"logoutOrder":1000}');
+    expect(res.body).toBe('{"authenticated":true,"username":"alice","logoutOrder":1000}');
   });
 
   it("echoes the configured logoutOrder for the client logout CTA", async () => {
@@ -186,7 +186,7 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ method: "GET", url: "/auth/status" }), res.res);
     expect(res.status).toBe(200);
-    expect(res.body).toBe('{"authenticated":false,"logoutOrder":777}');
+    expect(res.body).toBe('{"authenticated":false,"username":null,"logoutOrder":777}');
   });
 
   it("ignores a Bearer header (cookie only)", async () => {
@@ -201,6 +201,19 @@ describe("GET /auth/status", () => {
       makeReq({ method: "GET", url: "/auth/status", authorization: "Bearer some-session-token" }),
       res.res,
     );
-    expect(res.body).toBe('{"authenticated":false,"logoutOrder":1000}');
+    expect(res.body).toBe('{"authenticated":false,"username":null,"logoutOrder":1000}');
+  });
+
+  it("reports username null for an unknown session cookie", async () => {
+    const harness = makeHarness();
+    registerPasswordEndpoints(harness.deps);
+    const res = makeRes();
+    await handlerOf(
+      harness,
+      "exact",
+      "/auth/status",
+    )(makeReq({ method: "GET", url: "/auth/status", cookie: "dsh_auth=ghost" }), res.res);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe('{"authenticated":false,"username":null,"logoutOrder":1000}');
   });
 });

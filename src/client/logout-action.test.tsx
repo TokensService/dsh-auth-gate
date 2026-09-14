@@ -77,8 +77,8 @@ describe("apply", () => {
     for (const [, callback] of h.injectCalls) callback();
     await flushMicrotasks();
     expect(h.localeRegisters).toEqual([
-      ["auth", "zh", { logout: "退出登录" }],
-      ["auth", "en", { logout: "Sign out" }],
+      ["auth", "zh", { logout: "退出登录", signedInAs: "当前登录" }],
+      ["auth", "en", { logout: "Sign out", signedInAs: "Signed in as" }],
     ]);
     expect(h.injectCalls.map(([key]) => key).sort((a, b) => a.localeCompare(b))).toEqual([
       "settings.general.item",
@@ -139,6 +139,15 @@ describe("apply", () => {
   });
 });
 
+/** /auth/status 返回给定 authenticated 值与用户名（默认 null，同 token 模式）。 */
+function statusResponse(authenticated: boolean, username: string | null = null): unknown {
+  return { json: () => Promise.resolve({ authenticated, username }) };
+}
+
+function enT(): (key: string) => string {
+  return (key) => (key === "signedInAs" ? "Signed in as" : "Sign out");
+}
+
 describe("SettingsLogoutAction (settings General CTA)", () => {
   const fetchMock = vi.fn();
 
@@ -150,15 +159,6 @@ describe("SettingsLogoutAction (settings General CTA)", () => {
     vi.unstubAllGlobals();
     fetchMock.mockReset();
   });
-
-  /** /auth/status 返回给定 authenticated 值。 */
-  function statusResponse(authenticated: boolean): unknown {
-    return { json: () => Promise.resolve({ authenticated }) };
-  }
-
-  function enT(): () => string {
-    return () => "Sign out";
-  }
 
   it("renders a prominent logout CTA (post form + 16px icon + en text) when authenticated", async () => {
     fetchMock.mockResolvedValue(statusResponse(true));
@@ -224,6 +224,43 @@ describe("SettingsLogoutAction (settings General CTA)", () => {
       button.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
     });
     expect(button.style.filter).toBe("");
+    root.unmount();
+    container.remove();
+  });
+});
+
+describe("SettingsLogoutAction username line", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  it("shows the signed-in username above the CTA when the status reports one", async () => {
+    fetchMock.mockResolvedValue(statusResponse(true, "alice"));
+    const { root, container } = await renderElement(
+      createElement(SettingsLogoutAction, { t: enT() }),
+    );
+    expect(container.textContent).toContain("Signed in as");
+    expect(container.textContent).toContain("alice");
+    const button = container.querySelector("button");
+    expect(button).not.toBeNull();
+    root.unmount();
+    container.remove();
+  });
+
+  it("omits the username line when the status reports none (token mode)", async () => {
+    fetchMock.mockResolvedValue(statusResponse(true, null));
+    const { root, container } = await renderElement(
+      createElement(SettingsLogoutAction, { t: enT() }),
+    );
+    expect(container.querySelector("button")).not.toBeNull();
+    expect(container.textContent).not.toContain("Signed in as");
     root.unmount();
     container.remove();
   });

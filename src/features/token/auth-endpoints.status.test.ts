@@ -161,11 +161,11 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ cookie: `dsh_auth=${issued.token}` }), authed.res);
     expect(authed.status).toBe(200);
-    expect(authed.body).toBe('{"authenticated":true,"logoutOrder":1000}');
+    expect(authed.body).toBe('{"authenticated":true,"username":null,"logoutOrder":1000}');
 
     const anonymous = makeRes();
     await handlerOf(harness, "exact", "/auth/status")(makeReq({}), anonymous.res);
-    expect(anonymous.body).toBe('{"authenticated":false,"logoutOrder":1000}');
+    expect(anonymous.body).toBe('{"authenticated":false,"username":null,"logoutOrder":1000}');
 
     const bearerOnly = makeRes();
     await handlerOf(
@@ -173,7 +173,7 @@ describe("GET /auth/status", () => {
       "exact",
       "/auth/status",
     )(makeReq({ authorization: "Bearer good-token" }), bearerOnly.res);
-    expect(bearerOnly.body).toBe('{"authenticated":false,"logoutOrder":1000}');
+    expect(bearerOnly.body).toBe('{"authenticated":false,"username":null,"logoutOrder":1000}');
   });
 
   it("echoes the configured logoutOrder for the client logout CTA", async () => {
@@ -182,6 +182,24 @@ describe("GET /auth/status", () => {
     const res = makeRes();
     await handlerOf(harness, "exact", "/auth/status")(makeReq({}), res.res);
     expect(res.status).toBe(200);
-    expect(res.body).toBe('{"authenticated":false,"logoutOrder":5000}');
+    expect(res.body).toBe('{"authenticated":false,"username":null,"logoutOrder":5000}');
+  });
+
+  it("reports username null even for a valid session (token mode has no user identity)", async () => {
+    const harness = makeHarness();
+    registerAuthEndpoints(harness.deps);
+    const issued = await harness.sessions()!.create("token", 60_000);
+    const res = makeRes();
+    await handlerOf(
+      harness,
+      "exact",
+      "/auth/status",
+    )(makeReq({ cookie: `dsh_auth=${issued.token}` }), res.res);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      authenticated: true,
+      username: null,
+      logoutOrder: 1000,
+    });
   });
 });

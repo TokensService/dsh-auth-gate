@@ -156,7 +156,10 @@ async function logout(
   deps.logger.info("logout");
 }
 
-/** GET /auth/status：只认 cookie（M5，Bearer 不参与）。 */
+/**
+ * GET /auth/status：只认 cookie（M5，Bearer 不参与）。token 模式无用户身份（会话
+ * subject 恒为审计占位 "token"），`username` 恒 null，与 password 模式响应同形。
+ */
 function handleStatus(deps: AuthEndpointsDeps, req: IncomingMessage, res: ServerResponse): void {
   if (req.method !== "GET") {
     methodNotAllowed(res, "GET");
@@ -171,7 +174,7 @@ function handleStatus(deps: AuthEndpointsDeps, req: IncomingMessage, res: Server
     store.getByToken(token) !== undefined;
   res.setHeader("cache-control", "no-store");
   res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify({ authenticated, logoutOrder: deps.logoutOrder }));
+  res.end(JSON.stringify({ authenticated, username: null, logoutOrder: deps.logoutOrder }));
 }
 
 function queryOf(req: IncomingMessage): URLSearchParams {

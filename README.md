@@ -105,6 +105,19 @@ for light/dark), and its label follows the GUI language through the same
 locale mechanism the Settings language switch uses. Clicking it runs the same
 native `POST /auth/logout?next=/` flow as before.
 
+In password mode the signed-in username shows above the button. Both the button
+and the username line read `GET /auth/status`, which reports the current session
+as JSON:
+
+```json
+{ "authenticated": true, "username": "alice", "logoutOrder": 1000 }
+```
+
+`username` is the session subject (the login name in password mode); it is
+`null` when there is no valid session, and always `null` in token mode, where
+the shared secret has no per-user identity. Any page inside dsh web can fetch
+this endpoint to display the current user.
+
 ## Configuration
 
 The bundle mount (id `dsh-auth-gate`, inserted by `dsh plugin add`) uses the
