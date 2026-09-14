@@ -66,6 +66,8 @@ type Translate = (key: string) => string;
 export interface UserRowProps {
   user: AdminUser;
   t: Translate;
+  /** 当前登录用户是否为 admin（决定管理按钮是否出现；改密按钮本人亦可见）。 */
+  isAdmin: boolean;
   busy: boolean;
   onPassword: (username: string, password: string) => Promise<boolean>;
   onToggleDisabled: (user: AdminUser) => Promise<boolean>;
@@ -73,68 +75,37 @@ export interface UserRowProps {
   onDelete: (username: string) => Promise<boolean>;
 }
 
-/** 单个用户行：状态徽标 + 改密内联表单 + 启停/TOTP/删除（删除两步确认）。 */
+/** 单个用户行：状态徽标 + 改密内联表单 + 管理操作组（仅 admin，删除两步确认）。 */
 export function UserRow(props: UserRowProps) {
-  const { user, t, busy } = props;
+  const { user, t, isAdmin, busy } = props;
   const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   return (
     <div style={ROW_STYLE}>
       <span style={NAME_STYLE}>{user.username}</span>
       {user.current && <span style={BADGE_STYLE}>{t("users.you")}</span>}
+      {user.admin && <span style={BADGE_STYLE}>{t("users.admin")}</span>}
       {user.disabled && <span style={BADGE_STYLE}>{t("users.disabled")}</span>}
       {user.totp && <span style={BADGE_STYLE}>{t("users.totpOn")}</span>}
       <span style={ACTIONS_STYLE}>
-        <button
-          type="button"
-          style={SMALL_BUTTON_STYLE}
-          disabled={busy}
-          onClick={() => setEditing((open) => !open)}
-        >
-          {t("users.changePassword")}
-        </button>
-        <button
-          type="button"
-          style={SMALL_BUTTON_STYLE}
-          disabled={busy || user.current}
-          onClick={() => void props.onToggleDisabled(user)}
-        >
-          {user.disabled ? t("users.enable") : t("users.disable")}
-        </button>
-        <button
-          type="button"
-          style={SMALL_BUTTON_STYLE}
-          disabled={busy}
-          onClick={() => void props.onTotp(user)}
-        >
-          {user.totp ? t("users.totpDisable") : t("users.totpEnable")}
-        </button>
-        {confirming ? (
-          <>
-            <button
-              type="button"
-              style={SMALL_BUTTON_STYLE}
-              disabled={busy}
-              onClick={() => {
-                setConfirming(false);
-                void props.onDelete(user.username);
-              }}
-            >
-              {t("users.confirmDelete")}
-            </button>
-            <button type="button" style={SMALL_BUTTON_STYLE} onClick={() => setConfirming(false)}>
-              {t("users.cancel")}
-            </button>
-          </>
-        ) : (
+        {(isAdmin || user.current) && (
           <button
             type="button"
             style={SMALL_BUTTON_STYLE}
-            disabled={busy || user.current}
-            onClick={() => setConfirming(true)}
+            disabled={busy}
+            onClick={() => setEditing((open) => !open)}
           >
-            {t("users.delete")}
+            {t("users.changePassword")}
           </button>
+        )}
+        {isAdmin && (
+          <AdminActions
+            user={user}
+            t={t}
+            busy={busy}
+            onToggleDisabled={props.onToggleDisabled}
+            onTotp={props.onTotp}
+            onDelete={props.onDelete}
+          />
         )}
       </span>
       {editing && (
@@ -149,6 +120,66 @@ export function UserRow(props: UserRowProps) {
         />
       )}
     </div>
+  );
+}
+
+/** 管理操作组（仅 admin 挂载）：启停 + TOTP 启停 + 删除（两步确认）。 */
+function AdminActions(props: {
+  user: AdminUser;
+  t: Translate;
+  busy: boolean;
+  onToggleDisabled: (user: AdminUser) => Promise<boolean>;
+  onTotp: (user: AdminUser) => Promise<boolean>;
+  onDelete: (username: string) => Promise<boolean>;
+}) {
+  const { user, t, busy } = props;
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        style={SMALL_BUTTON_STYLE}
+        disabled={busy || user.current}
+        onClick={() => void props.onToggleDisabled(user)}
+      >
+        {user.disabled ? t("users.enable") : t("users.disable")}
+      </button>
+      <button
+        type="button"
+        style={SMALL_BUTTON_STYLE}
+        disabled={busy}
+        onClick={() => void props.onTotp(user)}
+      >
+        {user.totp ? t("users.totpDisable") : t("users.totpEnable")}
+      </button>
+      {confirming ? (
+        <>
+          <button
+            type="button"
+            style={SMALL_BUTTON_STYLE}
+            disabled={busy}
+            onClick={() => {
+              setConfirming(false);
+              void props.onDelete(user.username);
+            }}
+          >
+            {t("users.confirmDelete")}
+          </button>
+          <button type="button" style={SMALL_BUTTON_STYLE} onClick={() => setConfirming(false)}>
+            {t("users.cancel")}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          style={SMALL_BUTTON_STYLE}
+          disabled={busy || user.current}
+          onClick={() => setConfirming(true)}
+        >
+          {t("users.delete")}
+        </button>
+      )}
+    </>
   );
 }
 

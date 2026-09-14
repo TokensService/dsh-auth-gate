@@ -40,8 +40,10 @@ const ERROR_STYLE: CSSProperties = {
 
 /**
  * 「用户管理」设置页（`settings.section` 槽，password 模式专用）：列出 users.yaml
- * 全部用户（禁用/TOTP/当前登录徽标），支持添加、改密、启停、TOTP 启停、删除。
+ * 全部用户（管理员/禁用/TOTP/当前登录徽标），支持添加、改密、启停、TOTP 启停、删除。
  * 数据走同源 `/auth/users` 管理 API（会话自校验；token 模式 404 → 不可用提示）。
+ * 权限（D13）：非 admin 只能改自己的密码，故隐藏添加表单与其他行的操作按钮，
+ * 服务端对越权变更恒 403（UI 降级只是镜像，API 才是权威）。
  */
 export function SettingsUsersSection({ t }: SettingsUsersSectionProps) {
   const tr = useCallback((key: string) => (typeof t === "function" ? t(key) : key), [t]);
@@ -106,6 +108,7 @@ export function SettingsUsersSection({ t }: SettingsUsersSectionProps) {
         <ReadyPanel
           tr={tr}
           users={users}
+          isAdmin={users.find((user) => user.current)?.admin === true}
           errorCode={errorCode}
           reveal={reveal}
           busy={busy}
@@ -130,6 +133,8 @@ export function SettingsUsersSection({ t }: SettingsUsersSectionProps) {
 interface ReadyPanelProps {
   tr: Translate;
   users: AdminUser[];
+  /** 当前登录用户是否为 admin（决定添加表单/行内管理按钮是否出现）。 */
+  isAdmin: boolean;
   errorCode: string;
   reveal: TotpRevealData | null;
   busy: boolean;
@@ -141,9 +146,9 @@ interface ReadyPanelProps {
   onTotp: (user: AdminUser) => Promise<boolean>;
 }
 
-/** ready 态主体：错误条 + TOTP 展示块 + 用户行列表 + 添加表单 + 脚注。 */
+/** ready 态主体：错误条 + TOTP 展示块 + 用户行列表 + 添加表单（仅 admin）+ 脚注。 */
 function ReadyPanel(props: ReadyPanelProps) {
-  const { tr, users, errorCode, reveal, busy } = props;
+  const { tr, users, isAdmin, errorCode, reveal, busy } = props;
   return (
     <>
       {errorCode !== "" && (
@@ -161,6 +166,7 @@ function ReadyPanel(props: ReadyPanelProps) {
               key={user.username}
               user={user}
               t={tr}
+              isAdmin={isAdmin}
               busy={busy}
               onPassword={props.onPassword}
               onToggleDisabled={props.onToggleDisabled}
@@ -170,8 +176,8 @@ function ReadyPanel(props: ReadyPanelProps) {
           ))}
         </div>
       )}
-      <AddUserForm t={tr} busy={busy} onAdd={props.onAdd} />
-      <div style={SUB_STYLE}>{tr("users.note")}</div>
+      {isAdmin && <AddUserForm t={tr} busy={busy} onAdd={props.onAdd} />}
+      <div style={SUB_STYLE}>{tr(isAdmin ? "users.note" : "users.noteNonAdmin")}</div>
     </>
   );
 }

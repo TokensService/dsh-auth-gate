@@ -14,6 +14,7 @@ const JSON_BODY_LIMIT = 16 * 1024;
 /** 管理 API 的稳定错误码（client 按码本地化，不依赖英文文案）。 */
 export type UserAdminErrorCode =
   | "unauthorized"
+  | "forbidden"
   | "store_unavailable"
   | "user_store_unavailable"
   | "bad_json"
@@ -53,6 +54,7 @@ export interface UserView {
   username: string;
   disabled: boolean;
   totp: boolean;
+  admin: boolean;
   current: boolean;
 }
 
@@ -61,8 +63,14 @@ export function viewOf(username: string, record: UserRecord, subject: string): U
     username,
     disabled: record.disabled,
     totp: record.totpSecret !== undefined,
+    admin: record.role === "admin",
     current: username === subject,
   };
+}
+
+/** subject 是否为管理员（D13）：users.yaml 里 `role: admin`；缺省/无记录均非管理员。 */
+export function isAdmin(snapshot: UsersSnapshot, subject: string): boolean {
+  return snapshot.users.get(subject)?.role === "admin";
 }
 
 export function enabledCount(snapshot: UsersSnapshot): number {

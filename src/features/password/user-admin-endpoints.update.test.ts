@@ -8,8 +8,10 @@ import {
 
 const harnesses: UserAdminHarness[] = [];
 
-async function makeHarness(): Promise<UserAdminHarness> {
-  const h = await makeUserAdminHarness();
+async function makeHarness(
+  options?: Parameters<typeof makeUserAdminHarness>[0],
+): Promise<UserAdminHarness> {
+  const h = await makeUserAdminHarness(options);
   harnesses.push(h);
   return h;
 }
@@ -48,7 +50,7 @@ describe("PATCH /auth/users", () => {
   });
 
   it("refuses to disable the signed-in user or the last enabled user", async () => {
-    const h = await makeHarness();
+    const h = await makeHarness({ bob: { role: "admin" } });
     const self = await call(h, "PATCH", { username: "alice", disabled: true });
     expect(self.status).toBe(409);
     expect(JSON.parse(self.body)).toEqual({ error: "self_target" });
@@ -86,7 +88,7 @@ describe("PATCH /auth/users", () => {
     const enable = await call(h, "PATCH", { username: "bob", totp: "enable" });
     expect(enable.status).toBe(200);
     expect(JSON.parse(enable.body)).toEqual({
-      user: { username: "bob", disabled: false, totp: true, current: false },
+      user: { username: "bob", disabled: false, totp: true, admin: false, current: false },
       totpSecret: "NEWSECRETB32",
       totpUri: "otpauth://totp/dsh-auth:bob?secret=NEWSECRETB32",
     });
@@ -120,11 +122,11 @@ describe("DELETE /auth/users", () => {
   });
 
   it("blocks deleting the last enabled user from another session", async () => {
-    const h = await makeHarness();
-    // bob 先建会话再被 alice 删除；其既有会话（D8：不吊销 subject 会话）删 alice
+    const h = await makeHarness({ bob: { role: "admin" } });
+    // bob 先建会话再被 alice 禁用；其既有会话（D8：不吊销 subject 会话）删 alice
     // （此时唯一启用用户）→ last_enabled。
     const bobCookie = await h.cookieFor("bob");
-    expect((await call(h, "DELETE", { username: "bob" })).status).toBe(200);
+    expect((await call(h, "PATCH", { username: "bob", disabled: true })).status).toBe(200);
     const res = await h.call(
       makeReq({
         method: "DELETE",
@@ -134,5 +136,57 @@ describe("DELETE /auth/users", () => {
       }),
     );
     expect(JSON.parse(res.body)).toEqual({ error: "last_enabled" });
+  });
+});
+
+describe("non-admin sessions (D13)", () => {
+  it("allows changing only the own password", async () => {
+    const h = await makeHarness();
+    const cookie = await h.cookieFor("bob");
+    const patch = (body: unknown) =>
+      h.call(makeReq({ method: "PATCH", contentType: "application/json", body, cookie }));
+    const own = await patch({ username: "bob", password: "new-pw" });
+    expect(own.status).toBe(200);
+    const bob = (await h.snapshot()).users.get("bob")!;
+    await expect(verifyPassword("new-pw", bob.passwordHash)).resolves.toBe(true);
+    expect(JSON.parse((await patch({ username: "alice", password: "x" })).body)).toEqual({
+      error: "forbidden",
+    });
+    expect(JSON.parse((await patch({ username: "bob", disabled: false })).body)).toEqual({
+      error: "forbidden",
+    });
+    expect(JSON.parse((await patch({ username: "bob", totp: "enable" })).body)).toEqual({
+      error: "forbidden",
+    });
+  });
+
+  it("rejects DELETE with 403", async () => {
+    const h = await makeHarness();
+    const res = await h.call(
+      makeReq({
+        method: "DELETE",
+        contentType: "application/json",
+        body: { username: "alice" },
+        cookie: await h.cookieFor("bob"),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: "forbidden" });
+    expect((await h.snapshot()).users.has("alice")).toBe(true);
+  });
+
+  it("treats a deleted admin's lingering session as non-admin (fail-closed)", async () => {
+    const h = await makeHarness({ bob: { role: "admin" } });
+    const bobCookie = await h.cookieFor("bob");
+    expect((await call(h, "DELETE", { username: "bob" })).status).toBe(200);
+    const res = await h.call(
+      makeReq({
+        method: "POST",
+        contentType: "application/json",
+        body: { username: "carol", password: "x" },
+        cookie: bobCookie,
+      }),
+    );
+    expect(JSON.parse(res.body)).toEqual({ error: "forbidden" });
   });
 });

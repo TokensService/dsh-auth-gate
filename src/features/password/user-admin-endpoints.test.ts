@@ -58,8 +58,20 @@ describe("GET /auth/users", () => {
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toEqual({
       users: [
-        { username: "alice", disabled: false, totp: false, current: true },
-        { username: "bob", disabled: false, totp: false, current: false },
+        { username: "alice", disabled: false, totp: false, admin: true, current: true },
+        { username: "bob", disabled: false, totp: false, admin: false, current: false },
+      ],
+    });
+  });
+
+  it("stays readable for non-admin sessions (current marker follows the session)", async () => {
+    const h = await makeHarness();
+    const res = await h.call(makeReq({ cookie: await h.cookieFor("bob") }));
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      users: [
+        { username: "alice", disabled: false, totp: false, admin: true, current: false },
+        { username: "bob", disabled: false, totp: false, admin: false, current: true },
       ],
     });
   });
@@ -116,5 +128,20 @@ describe("POST /auth/users", () => {
     );
     expect(notObject.status).toBe(400);
     expect(JSON.parse(notObject.body)).toEqual({ error: "bad_json" });
+  });
+
+  it("rejects non-admin sessions with 403 forbidden (D13)", async () => {
+    const h = await makeHarness();
+    const res = await h.call(
+      makeReq({
+        method: "POST",
+        contentType: "application/json",
+        body: { username: "carol", password: "carol-pw" },
+        cookie: await h.cookieFor("bob"),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: "forbidden" });
+    expect((await h.snapshot()).users.has("carol")).toBe(false);
   });
 });

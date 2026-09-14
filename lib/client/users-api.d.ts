@@ -6,6 +6,7 @@ export interface AdminUser {
     username: string;
     disabled: boolean;
     totp: boolean;
+    admin: boolean;
     current: boolean;
 }
 export type ListResult = {

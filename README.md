@@ -45,9 +45,10 @@ codebase. Solid engineering worth building on.
 - **A small command-line tool** for managing users:
 
   ```sh
-  dsh-auth user add admin --password-stdin   # add a user
-  dsh-auth user list                          # list users
+  dsh-auth user add admin --password-stdin --admin   # add a user (with the admin role)
+  dsh-auth user list                          # list users (admin/disabled markers)
   dsh-auth user disable admin                 # block a user's future logins
+  dsh-auth user admin disable admin           # revoke the admin role
   dsh-auth user totp enable admin             # generate a TOTP secret (prints an otpauth:// URI)
   dsh-auth user totp disable admin            # remove the TOTP secret
   ```
@@ -57,12 +58,17 @@ codebase. Solid engineering worth building on.
   through it — see [Quick start](#quick-start).
 
 - **A settings page for user management.** In password mode, the dsh settings
-  modal gains a **User Management** page: list every user (with disabled/TOTP
-  status and a "you" marker), add users, change passwords, disable or re-enable
-  accounts, manage TOTP secrets and delete users. It talks to a session-guarded
-  `/auth/users` API and refuses foot-guns like disabling yourself or removing
-  the last enabled account. (Token mode has no users, so the page shows an
-  "unavailable" notice there.)
+  modal gains a **User Management** page: list every user (with admin/disabled/
+  TOTP status and a "you" marker), add users, change passwords, disable or
+  re-enable accounts, manage TOTP secrets and delete users. It talks to a
+  session-guarded `/auth/users` API and refuses foot-guns like disabling
+  yourself or removing the last enabled account. Only **admins** may add users
+  or touch other accounts - a non-admin session can list users and change its
+  own password, nothing else. Roles live in `users.yaml` (`role: admin`) and
+  are granted or revoked via the CLI (`dsh-auth user admin enable <name>`);
+  after upgrading, grant the role once per admin or the page's mutations all
+  answer 403. (Token mode has no users, so the page shows an "unavailable"
+  notice there.)
 
 ## Quick start
 
@@ -77,7 +83,7 @@ dsh plugin --profile web add dsh-auth-gate
 #    ($DSH_HOME/profiles/web, default ~/.dsh/...) — the CLI is NOT added to your
 #    PATH, so call it through the profile. `dsh plugin` already requires pnpm:
 printf '%s\n' 'choose-a-strong-password' | \
-  pnpm --dir "$DSH_HOME/profiles/web" exec dsh-auth user add admin --password-stdin
+  pnpm --dir "$DSH_HOME/profiles/web" exec dsh-auth user add admin --password-stdin --admin
 
 # 3. Turn on password login: override the plugin config in $DSH_HOME/cordis.patch.yml
 #    (a ready-to-use config-override template ships in deploy/cordis.patch.yml;
@@ -196,7 +202,7 @@ runs fine. Pick one:
    pnpm, so the CLI resolves from the same place the plugin lives:
 
    ```sh
-   pnpm --dir "${DSH_HOME:-$HOME/.dsh}/profiles/web" exec dsh-auth user add admin --password-stdin
+   pnpm --dir "${DSH_HOME:-$HOME/.dsh}/profiles/web" exec dsh-auth user add admin --password-stdin --admin
    pnpm --dir "${DSH_HOME:-$HOME/.dsh}/profiles/web" exec dsh-auth user list
    ```
 
@@ -209,14 +215,14 @@ runs fine. Pick one:
 2. **Direct node invocation** (no pnpm needed at runtime):
 
    ```sh
-   node "$DSH_HOME/profiles/web/node_modules/dsh-auth-gate/lib/cli.js" user add admin --password-stdin
+   node "$DSH_HOME/profiles/web/node_modules/dsh-auth-gate/lib/cli.js" user add admin --password-stdin --admin
    ```
 
 3. **Install the package globally**, then `dsh-auth` is on your PATH:
 
    ```sh
    npm install -g dsh-auth-gate
-   dsh-auth user add admin --password-stdin
+   dsh-auth user add admin --password-stdin --admin
    ```
 
 Whichever way you call it, the CLI manages the same shared user list
@@ -237,7 +243,7 @@ runs fine. Pick one:
    pnpm, so the CLI resolves from the same place the plugin lives:
 
    ```sh
-   pnpm --dir "${DSH_HOME:-$HOME/.dsh}/profiles/web" exec dsh-auth user add admin --password-stdin
+   pnpm --dir "${DSH_HOME:-$HOME/.dsh}/profiles/web" exec dsh-auth user add admin --password-stdin --admin
    pnpm --dir "${DSH_HOME:-$HOME/.dsh}/profiles/web" exec dsh-auth user list
    ```
 
@@ -250,14 +256,14 @@ runs fine. Pick one:
 2. **Direct node invocation** (no pnpm needed at runtime):
 
    ```sh
-   node "$DSH_HOME/profiles/web/node_modules/dsh-auth-gate/lib/cli.js" user add admin --password-stdin
+   node "$DSH_HOME/profiles/web/node_modules/dsh-auth-gate/lib/cli.js" user add admin --password-stdin --admin
    ```
 
 3. **Install the package globally**, then `dsh-auth` is on your PATH:
 
    ```sh
    npm install -g dsh-auth-gate
-   dsh-auth user add admin --password-stdin
+   dsh-auth user add admin --password-stdin --admin
    ```
 
 Whichever way you call it, the CLI manages the same shared user list

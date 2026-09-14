@@ -109,3 +109,14 @@ loopback-only）；端点挂 `/auth` 外让门守卫；section order 可配置�
 零上游耦合、零新依赖、零新配置，CSRF 与误操作各有收口。
 → [zh](decisions/implemented/2026-09-14-user-management-settings-page.zh.md) ·
 [en](decisions/implemented/2026-09-14-user-management-settings-page.en.md)
+
+## D13. 用户管理引入 admin 角色与权限矩阵
+
+`users.yaml` 记录新增可选 `role: "admin"`；GET 任意会话可读，POST/DELETE 仅
+admin，PATCH 非 admin 只能改自己的密码（其余 → `403 forbidden`）；用户名是主键
+不可改；角色授予/回收只走 CLI。页面按角色降级 UI，API 恒为权威。**替代方案**：
+首用户即 admin / 配置名单；API 开放角色授予；非 admin 不可见列表；last_admin
+保护。**为什么**：角色随记录原子写零额外数据源，提权必须经过 shell，web 面
+爆炸半径钉死在 admin 自己的会话。
+→ [zh](decisions/implemented/2026-09-14-user-admin-role.zh.md) ·
+[en](decisions/implemented/2026-09-14-user-admin-role.en.md)

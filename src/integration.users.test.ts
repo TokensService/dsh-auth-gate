@@ -35,8 +35,12 @@ async function mountUsersStack(): Promise<{
   const usersFile = join(root, "users.yaml");
   await writeUsersFile(usersFile, {
     users: new Map([
-      ["admin", { passwordHash: await hashPassword(TEST_PASSWORD), disabled: false }],
+      [
+        "admin",
+        { passwordHash: await hashPassword(TEST_PASSWORD), disabled: false, role: "admin" },
+      ],
       ["disableduser", { passwordHash: await hashPassword(TEST_PASSWORD), disabled: true }],
+      ["plain", { passwordHash: await hashPassword(TEST_PASSWORD), disabled: false }],
     ]),
   });
   const ctx = new Context();
@@ -84,12 +88,12 @@ async function unmountStack(fibers: Fiber[], root: string): Promise<void> {
   rmSync(root, { recursive: true, force: true });
 }
 
-/** 真实登录拿会话 cookie（admin / TEST_PASSWORD）。 */
-async function loginCookie(base: string): Promise<string> {
+/** 真实登录拿会话 cookie（默认 admin / TEST_PASSWORD）。 */
+async function loginCookie(base: string, username = "admin"): Promise<string> {
   const res = await fetch(`${base}/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: `username=admin&password=${encodeURIComponent(TEST_PASSWORD)}`,
+    body: `username=${username}&password=${encodeURIComponent(TEST_PASSWORD)}`,
     redirect: "manual",
   });
   expect(res.status).toBe(302);
@@ -120,8 +124,9 @@ describe("integration: /auth/users over real HTTP", () => {
       expect(list.status).toBe(200);
       expect(await list.json()).toEqual({
         users: [
-          { username: "admin", disabled: false, totp: false, current: true },
-          { username: "disableduser", disabled: true, totp: false, current: false },
+          { username: "admin", disabled: false, totp: false, admin: true, current: true },
+          { username: "disableduser", disabled: true, totp: false, admin: false, current: false },
+          { username: "plain", disabled: false, totp: false, admin: false, current: false },
         ],
       });
     } finally {
@@ -164,7 +169,7 @@ describe("integration: /auth/users over real HTTP", () => {
       expect(removed.status).toBe(200);
       const list = await fetch(`${base}/auth/users`, { headers: { cookie } });
       const body = (await list.json()) as { users: { username: string }[] };
-      expect(body.users.map((u) => u.username)).toEqual(["admin"]);
+      expect(body.users.map((u) => u.username)).toEqual(["admin", "plain"]);
     } finally {
       await unmountStack(fibers, root);
     }
@@ -184,6 +189,34 @@ describe("integration: /auth/users over real HTTP", () => {
       });
       expect(form.status).toBe(415);
       expect(await form.json()).toEqual({ error: "unsupported_media_type" });
+    } finally {
+      await unmountStack(fibers, root);
+    }
+  });
+});
+
+describe("integration: /auth/users RBAC (D13)", () => {
+  it("restricts non-admin sessions to changing their own password", async () => {
+    const { port, fibers, root } = await mountUsersStack();
+    try {
+      const base = `http://127.0.0.1:${port}`;
+      const cookie = await loginCookie(base, "plain");
+      const create = await mutate(base, "POST", cookie, { username: "carol", password: "pw4" });
+      expect(create.status).toBe(403);
+      expect(await create.json()).toEqual({ error: "forbidden" });
+      const other = await mutate(base, "PATCH", cookie, { username: "admin", password: "pw4" });
+      expect(other.status).toBe(403);
+      const removed = await mutate(base, "DELETE", cookie, { username: "admin" });
+      expect(removed.status).toBe(403);
+      const own = await mutate(base, "PATCH", cookie, { username: "plain", password: "pw4" });
+      expect(own.status).toBe(200);
+      const relogin = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "username=plain&password=pw4",
+        redirect: "manual",
+      });
+      expect(relogin.status).toBe(302);
     } finally {
       await unmountStack(fibers, root);
     }

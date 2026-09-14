@@ -10,8 +10,20 @@ import { SettingsUsersSection } from "./users-section.tsx";
 
 const t = (key: string): string => USERS_DICT_EN[key] ?? key;
 
-const ALICE: AdminUser = { username: "alice", disabled: false, totp: false, current: true };
-const BOB: AdminUser = { username: "bob", disabled: true, totp: true, current: false };
+const ALICE: AdminUser = {
+  username: "alice",
+  disabled: false,
+  totp: false,
+  admin: true,
+  current: true,
+};
+const BOB: AdminUser = {
+  username: "bob",
+  disabled: true,
+  totp: true,
+  admin: false,
+  current: false,
+};
 
 type FetchMock = ReturnType<
   typeof vi.fn<(url: string, init?: { method?: string; body?: string }) => Promise<unknown>>
@@ -200,7 +212,13 @@ describe("SettingsUsersSection row actions", () => {
   });
 
   it("reveals the TOTP secret after enabling and hides it on dismiss", async () => {
-    const carol: AdminUser = { username: "carol", disabled: false, totp: false, current: false };
+    const carol: AdminUser = {
+      username: "carol",
+      disabled: false,
+      totp: false,
+      admin: false,
+      current: false,
+    };
     const { mock, calls } = makeFetchMock([ALICE, carol], {
       status: 200,
       body: {

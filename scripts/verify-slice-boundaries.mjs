@@ -41,6 +41,7 @@ const ROOT_FILES = new Set([
   "index.password.test.ts",
   "cli.ts",
   "cli.test.ts",
+  "cli.admin.test.ts",
   "cli.totp.test.ts",
   "proxy-cli.ts",
   "proxy-cli.test.ts",

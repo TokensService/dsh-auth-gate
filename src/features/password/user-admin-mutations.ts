@@ -3,6 +3,7 @@ import { USERNAME_RE, type UserRecord, type UsersSnapshot } from "../../shared/i
 import { hashPassword } from "./password.js";
 import {
   enabledCount,
+  isAdmin,
   loadUsersOr503,
   readJsonOrRespond,
   requireSubject,
@@ -28,6 +29,9 @@ export async function handleUserUpdate(
   if (!USERNAME_RE.test(username)) return sendCode(res, 400, "invalid_username");
   const loaded = await loadUsersOr503(deps, res);
   if (loaded === undefined) return;
+  if (!isAdmin(loaded.snapshot, subject) && !selfPasswordOnly(body, username, subject)) {
+    return sendCode(res, 403, "forbidden");
+  }
   const record = loaded.snapshot.users.get(username);
   if (record === undefined) return sendCode(res, 404, "not_found");
   const plan = await planUpdate(deps, body, record, username, subject, loaded.snapshot);
@@ -41,6 +45,15 @@ export async function handleUserUpdate(
       ? {}
       : { totpSecret: plan.secret, totpUri: deps.totpUri(username, plan.secret) }),
   });
+}
+
+/** 非 admin 的 PATCH 许可（D13）：只允许改自己的密码（目标非己或带其他字段 → 403）。 */
+function selfPasswordOnly(
+  body: Record<string, unknown>,
+  username: string,
+  subject: string,
+): boolean {
+  return username === subject && body["disabled"] === undefined && body["totp"] === undefined;
 }
 
 type UpdatePlan =
@@ -101,12 +114,18 @@ function planTotp(
     return { record: { ...record, totpSecret: secret }, secret };
   }
   if (action === "disable") {
-    return { record: { passwordHash: record.passwordHash, disabled: record.disabled } };
+    return {
+      record: {
+        passwordHash: record.passwordHash,
+        disabled: record.disabled,
+        ...(record.role === undefined ? {} : { role: record.role }),
+      },
+    };
   }
   return { status: 400, code: "invalid_field" };
 }
 
-/** DELETE /auth/users {username}：删除用户；自我删除/最后一个启用用户保护。 */
+/** DELETE /auth/users {username}：删除用户（仅 admin）；自我删除/最后一个启用用户保护。 */
 export async function handleUserDelete(
   deps: UserAdminDeps,
   req: IncomingMessage,
@@ -120,6 +139,7 @@ export async function handleUserDelete(
   if (!USERNAME_RE.test(username)) return sendCode(res, 400, "invalid_username");
   const loaded = await loadUsersOr503(deps, res);
   if (loaded === undefined) return;
+  if (!isAdmin(loaded.snapshot, subject)) return sendCode(res, 403, "forbidden");
   const record = loaded.snapshot.users.get(username);
   if (record === undefined) return sendCode(res, 404, "not_found");
   if (username === subject) return sendCode(res, 409, "self_target");

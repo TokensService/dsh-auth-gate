@@ -3,7 +3,7 @@ import { type UserRecord, type UsersLoadResult, type UsersSnapshot } from "../..
 import type { HttpHandler } from "../../gate/index.js";
 import type { SessionStore } from "../../session/index.js";
 /** 管理 API 的稳定错误码（client 按码本地化，不依赖英文文案）。 */
-export type UserAdminErrorCode = "unauthorized" | "store_unavailable" | "user_store_unavailable" | "bad_json" | "unsupported_media_type" | "body_too_large" | "invalid_username" | "empty_password" | "invalid_field" | "nothing_to_update" | "duplicate" | "not_found" | "self_target" | "last_enabled" | "totp_exists";
+export type UserAdminErrorCode = "unauthorized" | "forbidden" | "store_unavailable" | "user_store_unavailable" | "bad_json" | "unsupported_media_type" | "body_too_large" | "invalid_username" | "empty_password" | "invalid_field" | "nothing_to_update" | "duplicate" | "not_found" | "self_target" | "last_enabled" | "totp_exists";
 export interface UserAdminDeps {
     /** 注册路由（index.ts 传入包装后的 server.register；/auth 白名单放行，端点自校验会话）。 */
     register(route: {
@@ -31,9 +31,12 @@ export interface UserView {
     username: string;
     disabled: boolean;
     totp: boolean;
+    admin: boolean;
     current: boolean;
 }
 export declare function viewOf(username: string, record: UserRecord, subject: string): UserView;
+/** subject 是否为管理员（D13）：users.yaml 里 `role: admin`；缺省/无记录均非管理员。 */
+export declare function isAdmin(snapshot: UsersSnapshot, subject: string): boolean;
 export declare function enabledCount(snapshot: UsersSnapshot): number;
 /** 会话门：store 缺失 503、无有效会话 401（JSON）；通过返回会话 subject。 */
 export declare function requireSubject(deps: UserAdminDeps, req: IncomingMessage, res: ServerResponse): string | undefined;

@@ -123,14 +123,21 @@ export interface UserAdminHarness {
 
 /**
  * /auth/users 测试基座：临时目录里的真实 users.yaml（load/write 走真实
- * loadUsersFile/writeUsersFile 往返）+ 内存会话表。初始用户 alice（enabled）+
- * bob（enabled，可换）。TOTP 注入固定假值（确定性断言）。
+ * loadUsersFile/writeUsersFile 往返）+ 内存会话表。初始用户 alice（admin，enabled）+
+ * bob（非 admin，enabled；可换）。TOTP 注入固定假值（确定性断言）。
  */
 export async function makeUserAdminHarness(options?: {
+  alice?: Partial<UserRecord> & { passwordHash?: string };
   bob?: Partial<UserRecord> & { passwordHash?: string };
 }): Promise<UserAdminHarness> {
   const dir = mkdtempSync(join(tmpdir(), "dsh-auth-users-"));
   const usersFile = join(dir, "users.yaml");
+  const alice: UserRecord = {
+    passwordHash: await hashPassword("alice-pw"),
+    disabled: false,
+    role: "admin",
+    ...options?.alice,
+  };
   const bob: UserRecord = {
     passwordHash: await hashPassword("bob-pw"),
     disabled: false,
@@ -138,7 +145,7 @@ export async function makeUserAdminHarness(options?: {
   };
   await writeUsersFile(usersFile, {
     users: new Map([
-      ["alice", { passwordHash: await hashPassword("alice-pw"), disabled: false }],
+      ["alice", alice],
       ["bob", bob],
     ]),
   });

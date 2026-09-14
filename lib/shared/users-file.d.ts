@@ -5,6 +5,8 @@ export interface UserRecord {
     /** M3 只解析不使用（M4 TOTP）。 */
     totpSecret?: string;
     disabled: boolean;
+    /** 管理员角色（D13）：缺省为普通用户；只能经 CLI 授予/回收。 */
+    role?: "admin";
 }
 export interface UsersSnapshot {
     users: Map<string, UserRecord>;
