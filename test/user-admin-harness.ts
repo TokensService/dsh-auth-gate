@@ -118,9 +118,8 @@ export interface UserAdminHarness {
   importHandler: HttpHandler;
   store: SessionStore;
   usersFile: string;
-  /** 临时目录根；服务端导入目录为其下 `imports/`。 */
+  /** 临时目录根（users.yaml 所在，也是导入测试放置 txt 的位置）。 */
   dir: string;
-  importsDir: string;
   logs: { level: string; message: unknown }[];
   /** 以指定用户身份建会话（默认 alice），返回 Cookie 头值。 */
   cookieFor(username?: string): Promise<string>;
@@ -193,7 +192,6 @@ export async function makeUserAdminHarness(options?: {
     store,
     usersFile,
     dir,
-    importsDir: join(dir, "imports"),
     logs,
     cookieFor: async (username = "alice") =>
       `dsh_auth=${(await store.create(username, 60_000)).token}`,

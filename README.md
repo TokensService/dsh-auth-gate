@@ -69,9 +69,9 @@ codebase. Solid engineering worth building on.
   after upgrading, grant the role once per admin or the page's mutations all
   answer 403. (Token mode has no users, so the page shows an "unavailable"
   notice there.) The page also **batch-imports users from a txt file** (one
-  `username,password` per line): pick a local file from your machine, or drop
-  the file into the server's `imports/` directory next to `users.yaml` and
-  pick it there - both flows validate every line and write all-or-nothing.
+  `username,password` per line): pick a local file from your machine, or enter
+  the absolute path of a `.txt` anywhere on the server - both flows validate
+  every line and write all-or-nothing.
 
 ## Quick start
 

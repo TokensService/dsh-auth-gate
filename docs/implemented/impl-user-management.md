@@ -41,10 +41,10 @@ and delete users from the browser.
 | Token mode                                     | endpoint not registered -> `/auth` catch-all `404`; the settings page shows an "unavailable" notice                                                                                                               |
 | users.yaml read/write failure                  | `503 user_store_unavailable` + error log                                                                                                                                                                          |
 | `POST /auth/users/import {text}` (admin only)  | raw local file content parsed line by line as `username,password` (empty/`#` lines skipped, split at the first comma); full validation -> atomic write; `201 {created, users}`                                    |
-| `POST /auth/users/import {file}` (admin only)  | reads `<usersDir>/imports/<name>` (basename whitelist + `.txt`, traversal rejected) then same flow as `{text}`                                                                                                    |
-| `GET /auth/users/import` (admin only)          | `200 {files:[{name,size}]}`: candidate txt files in imports/ (sorted); missing dir -> empty list                                                                                                                  |
+| `POST /auth/users/import {path}` (admin only)  | reads an absolute-path `.txt` anywhere on the server (D15; relative/non-`.txt`/missing -> 404) then same flow as `{text}`                                                                                         |
+| Non-POST to `/auth/users/import`               | `405` (the GET list left with the removed imports/ sandbox mode)                                                                                                                                                  |
 | Import content with invalid lines              | `400 invalid_entry` + `{failures:[{line,username,code}]}` - all-or-nothing, nothing is written (codes reuse invalid_username/empty_password/duplicate)                                                            |
-| Import body `{text}`/`{file}` missing or both  | `400 invalid_field`; empty content (only blanks/comments) -> `400 no_entries`; over 100 entries -> `400 too_many_entries`                                                                                         |
+| Import body: not exactly one of text/path      | `400 invalid_field` (a lone `{file}` counts as no source since the sandbox mode was removed); empty content (only blanks/comments) -> `400 no_entries`; over 100 entries -> `400 too_many_entries`                |
 | Server import file missing/non-txt/over 256KiB | `404 import_file_not_found` / `404` / `413 import_file_too_large`                                                                                                                                                 |
 | Import request body > 256 KiB                  | `413 body_too_large` (raised cap only on the import route; other `/auth/users` methods stay at 16 KiB)                                                                                                            |
 
@@ -88,17 +88,18 @@ with stable machine codes; the client localizes by code, never by message text.
   `current` (hiding the add form and other rows' action buttons), but the
   API is the authority; every write path that rebuilds a record must
   preserve `role` (TOTP-disable rebuilt field-by-field and was fixed).
-- **D-UM-9** (D14): batch import lives on its own exact route
-  `/auth/users/import` (GET lists files / POST imports), admin only. Two
-  browsing modes: local = the browser reads the file with FileReader and
-  submits the raw text as `{text}` (zero server filesystem exposure);
-  server = a fixed sandbox of `.txt` files inside `<usersDir>/imports/`
-  (basename whitelist; free-form path input was rejected - no arbitrary
-  file read from the web). The server parses `username,password` lines in
-  both modes (line-numbered, machine-readable failures), writes
-  all-or-nothing atomically; caps are 256 KiB / 100 entries (total scrypt
-  cost stays in seconds). Imported users are always regular users (roles
-  are CLI-only, D13).
+- **D-UM-9** (D14, amended by D15): batch import lives on its own exact route
+  `/auth/users/import` (POST only), admin only. Two sources: local = the
+  browser reads the file with FileReader and submits the raw text as `{text}`
+  (zero server filesystem exposure); server path = `{path}`, an absolute-path
+  `.txt` anywhere on the host (D15: D14's fixed `<usersDir>/imports/` sandbox
+  with its `{file}` source and GET listing was removed once the owner accepted
+  admins reading any `.txt` - still admin-only, `.txt`-suffixed, size capped,
+  every invalid form collapsed into 404). The server parses `username,password`
+  lines for both sources (line-numbered, machine-readable failures), writes
+  all-or-nothing atomically; caps are 256 KiB / 100 entries (total scrypt cost
+  stays in seconds). Imported users are always regular users (roles are
+  CLI-only, D13).
 
 ## 4. Deployment notes
 
@@ -113,10 +114,9 @@ with stable machine codes; the client localizes by code, never by message text.
   via the CLI first: `dsh-auth user admin enable <name>` (or create one with
   `dsh-auth user add <name> --password-stdin --admin`). `dsh-auth user list`
   marks roles as `(admin)` / `(admin, disabled)`.
-- **Server-side import**: drop a txt into `<users.yaml sibling>/imports/`
-  (e.g. `$DSH_HOME/auth/imports/team.txt`) and it appears in the page's
-  "Server file" mode; the directory is created by the operator (the plugin
-  never creates it) - keep permissions on par with users.yaml (600/700).
+- **Server-side import**: the "Server path" mode (D15) imports any
+  absolute-path `.txt` on the host directly - no staging directory involved;
+  keep the file's permissions on par with users.yaml (600/700).
 - TOTP enable via the page prints the base32 secret + otpauth URI once in the
   response; the admin copies it into the authenticator manually (no QR image,
   keeping the bundle self-contained).
@@ -136,21 +136,23 @@ with stable machine codes; the client localizes by code, never by message text.
   `test/user-admin-harness.ts` (real `users.yaml` round-trip in a temp dir +
   in-memory session table).
 - Import: `src/features/password/user-admin-import.test.ts` (parseImportText
-  pure line-level cases + GET list whitelist/401/403 + POST text/file
-  success, all-or-nothing per-line details, duplicates,
-  no_entries/too_many_entries/invalid_field, 404/413).
+  pure line-level cases + POST text/path success, all-or-nothing per-line
+  details, duplicates, no_entries/too_many_entries/invalid_field (incl. a lone
+  `{file}`), 404/413; path mode also covers relative/non-`.txt`/missing 404s
+  and the non-admin 403; non-POST methods answer 405).
 - Integration: `src/integration.users.test.ts` and
   `integration.users-import.test.ts` - real stack (storage-json +
   storage-domain + WebServer + plugin; shared base
   `integration-users-helpers.ts`): unauthenticated 401, list with
   `current`/`admin` markers, create -> real sign-in, duplicate 409,
   self-target 409, delete persistence, 405/415, the non-admin 403 matrix;
-  import: real sign-in after a text import, imports/ listing + file import,
-  `../users.yaml` traversal 404, non-admin 403 on both verbs.
+  import: real sign-in after a text import, absolute-path import with real
+  sign-in + non-`.txt`/relative 404s, non-admin 403, GET 405.
 - Client: `src/client/users-section.test.tsx` (states + mutations + TOTP
   reveal), `users-section.nonadmin.test.tsx` (degraded non-admin UI),
-  `user-import.test.tsx` (panel visibility, local raw-text upload, server
-  list/import, localized per-line failures); `logout-action.test.tsx`
+  `user-import.test.tsx` (panel visibility, local raw-text upload,
+  absolute-path import without any file listing, localized per-line failures);
+  `logout-action.test.tsx`
   covers the section registration and merged dictionaries.
 - CLI/file: `src/cli.test.ts` and `cli.admin.test.ts` (`--admin`,
   `user admin enable/disable`, list role markers);
@@ -159,8 +161,9 @@ with stable machine codes; the client localizes by code, never by message text.
 
 ## 6. Change log
 
-| commit        | content                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| 5508640       | feat: user management settings page + `/auth/users` API                                     |
-| dbbd507       | feat: admin role + permission matrix (D13), CLI role management, role-aware page            |
-| (this change) | feat: txt batch import (D14), local/server dual file browsing, `/auth/users/import` sandbox |
+| commit        | content                                                                                                        |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| 5508640       | feat: user management settings page + `/auth/users` API                                                        |
+| dbbd507       | feat: admin role + permission matrix (D13), CLI role management, role-aware page                               |
+| 28aeba3       | feat: txt batch import (D14), local/server dual file browsing, `/auth/users/import` sandbox                    |
+| (this change) | feat: batch import switches to an arbitrary absolute server path `{path}` (D15); imports/ sandbox mode removed |

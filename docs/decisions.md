@@ -126,8 +126,20 @@ admin，PATCH 非 admin 只能改自己的密码（其余 → `403 forbidden`）
 `POST /auth/users/import` 收 `{text}`（浏览器读本地文件原文）或 `{file}`
 （服务端 `<usersDir>/imports/` 内 `.txt`，basename 白名单防遍历）；逐行
 `用户名,密码`，全量校验、行号明细、all-or-nothing 原子写；仅 admin；
-256 KiB/100 条上限。**替代方案**：任意路径输入（任意文件读）；multipart
-上传；best-effort 逐条跳过；txt 带 role 列；客户端预解析。**为什么**：
-本地模式零文件系统暴露，服务端模式用固定目录换便利，失败可机读可重传。
+256 KiB/100 条上限。**替代方案**：任意路径输入（任意文件读；D15 起放开
+并取代沙箱）；multipart 上传；best-effort 逐条跳过；txt 带 role 列；
+客户端预解析。**为什么**：本地模式零文件系统暴露，服务端模式用固定目录
+换便利，失败可机读可重传。
 → [zh](decisions/implemented/2026-09-14-txt-batch-user-import.zh.md) ·
 [en](decisions/implemented/2026-09-14-txt-batch-user-import.en.md)
+
+## D15. 批量导入改用任意服务器绝对路径（修订 D14）
+
+`POST /auth/users/import` 服务端来源改为 `{path}`（服务器上任意绝对路径的
+`.txt`），D14 的 imports/ 沙箱（`{file}` + GET 列举）一并移除；非绝对路径/
+含 NUL/非 `.txt` 一律 404，256 KiB 封顶，审计日志记录路径；页面只留
+「本地文件 / 服务器路径」。**替代方案**：沙箱与 {path} 并存；文件系统浏览器；
+放开任意后缀；非法形态返回 400。**为什么**：owner 接受「admin 可读任意
+.txt」后，{path} 以最少入口覆盖全部服务端导入场景，端点与页面同步收窄。
+→ [zh](decisions/implemented/2026-09-14-server-path-import.zh.md) ·
+[en](decisions/implemented/2026-09-14-server-path-import.en.md)

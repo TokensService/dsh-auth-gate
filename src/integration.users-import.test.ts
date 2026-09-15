@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -30,36 +30,42 @@ describe("integration: /auth/users/import over real HTTP (D14)", () => {
     }
   });
 
-  it("lists and imports server-side files from the imports dir only", async () => {
+  it("imports from an absolute server path; non-txt and relative paths stay unreadable", async () => {
     const { port, fibers, root } = await mountUsersStack();
     try {
       const base = `http://127.0.0.1:${port}`;
       const cookie = await loginCookie(base);
-      mkdirSync(join(root, "imports"), { recursive: true });
-      writeFileSync(join(root, "imports", "team.txt"), "erin,pw-e\n");
-      const list = await importCall(base, "GET", cookie);
-      expect(list.status).toBe(200);
-      expect(await list.json()).toEqual({ files: [{ name: "team.txt", size: 10 }] });
-      const res = await importCall(base, "POST", cookie, { file: "team.txt" });
+      const outside = join(root, "team-full.txt");
+      writeFileSync(outside, "frank,pw-f\n");
+      const res = await importCall(base, "POST", cookie, { path: outside });
       expect(res.status).toBe(201);
-      const escape = await importCall(base, "POST", cookie, { file: "../users.yaml" });
-      expect(escape.status).toBe(404);
-      expect(await escape.json()).toEqual({ error: "import_file_not_found" });
+      const login = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "username=frank&password=pw-f",
+        redirect: "manual",
+      });
+      expect(login.status).toBe(302);
+      for (const value of [join(root, "users.yaml"), "team-full.txt"]) {
+        const denied = await importCall(base, "POST", cookie, { path: value });
+        expect(denied.status).toBe(404);
+        expect(await denied.json()).toEqual({ error: "import_file_not_found" });
+      }
     } finally {
       await unmountStack(fibers, root);
     }
   });
 
-  it("rejects non-admin sessions with 403 on both verbs", async () => {
+  it("rejects non-admin sessions with 403 and dropped verbs with 405", async () => {
     const { port, fibers, root } = await mountUsersStack();
     try {
       const base = `http://127.0.0.1:${port}`;
       const cookie = await loginCookie(base, "plain");
-      const list = await importCall(base, "GET", cookie);
-      expect(list.status).toBe(403);
       const res = await importCall(base, "POST", cookie, { text: "carol,pw-c" });
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "forbidden" });
+      const list = await importCall(base, "GET", cookie);
+      expect(list.status).toBe(405);
     } finally {
       await unmountStack(fibers, root);
     }
