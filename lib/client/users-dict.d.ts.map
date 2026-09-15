@@ -1,0 +1,1 @@
+{"version":3,"file":"users-dict.d.ts","sourceRoot":"","sources":["../../src/client/users-dict.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,eAAO,MAAM,aAAa,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CA6DhD,CAAC;AAEF,eAAO,MAAM,aAAa,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAiEhD,CAAC;AAEF;;;GAGG;AACH,wBAAgB,aAAa,CAAC,CAAC,EAAE,CAAC,GAAG,EAAE,MAAM,KAAK,MAAM,EAAE,IAAI,EAAE,MAAM,GAAG,MAAM,CAI9E"}

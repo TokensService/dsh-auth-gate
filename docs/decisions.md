@@ -100,3 +100,34 @@ client 在设置页退出按钮上方复用同一探针显示。**替代方案**
 token 模式返回 subject 占位符。**为什么**：增量字段零破坏、零额外请求，null 三态诚实。
 → [zh](decisions/implemented/2026-09-11-auth-status-username.zh.md) ·
 [en](decisions/implemented/2026-09-11-auth-status-username.en.md)
+
+## D12. 用户管理走设置页 + 会话自校验的 /auth/users API
+
+设置面板新增「用户管理」整页（`settings.section`），API 留在 `/auth` 白名单内自做
+会话校验；JSON-only 变更 + 自我/最后启用保护。**替代方案**：dsh RPC 通道（特权方法
+loopback-only）；端点挂 `/auth` 外让门守卫；section order 可配置。**为什么**：
+零上游耦合、零新依赖、零新配置，CSRF 与误操作各有收口。
+→ [zh](decisions/implemented/2026-09-14-user-management-settings-page.zh.md) ·
+[en](decisions/implemented/2026-09-14-user-management-settings-page.en.md)
+
+## D13. 用户管理引入 admin 角色与权限矩阵
+
+`users.yaml` 记录新增可选 `role: "admin"`；GET 任意会话可读，POST/DELETE 仅
+admin，PATCH 非 admin 只能改自己的密码（其余 → `403 forbidden`）；用户名是主键
+不可改；角色授予/回收只走 CLI。页面按角色降级 UI，API 恒为权威。**替代方案**：
+首用户即 admin / 配置名单；API 开放角色授予；非 admin 不可见列表；last_admin
+保护。**为什么**：角色随记录原子写零额外数据源，提权必须经过 shell，web 面
+爆炸半径钉死在 admin 自己的会话。
+→ [zh](decisions/implemented/2026-09-14-user-admin-role.zh.md) ·
+[en](decisions/implemented/2026-09-14-user-admin-role.en.md)
+
+## D14. txt 批量导入用户：本地/服务端双模式 + 固定 imports/ 沙箱
+
+`POST /auth/users/import` 收 `{text}`（浏览器读本地文件原文）或 `{file}`
+（服务端 `<usersDir>/imports/` 内 `.txt`，basename 白名单防遍历）；逐行
+`用户名,密码`，全量校验、行号明细、all-or-nothing 原子写；仅 admin；
+256 KiB/100 条上限。**替代方案**：任意路径输入（任意文件读）；multipart
+上传；best-effort 逐条跳过；txt 带 role 列；客户端预解析。**为什么**：
+本地模式零文件系统暴露，服务端模式用固定目录换便利，失败可机读可重传。
+→ [zh](decisions/implemented/2026-09-14-txt-batch-user-import.zh.md) ·
+[en](decisions/implemented/2026-09-14-txt-batch-user-import.en.md)

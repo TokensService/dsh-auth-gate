@@ -12,6 +12,7 @@ import {
   USERNAME_RE,
   UsersFileError,
   writeUsersFile,
+  type UserRecord,
   type UsersSnapshot,
 } from "./shared/index.js";
 
@@ -23,9 +24,10 @@ export interface CliIo {
 }
 
 const USAGE = `Usage:
-  dsh-auth user add <name> --password-stdin [--disabled] [--file <path>]
+  dsh-auth user add <name> --password-stdin [--disabled] [--admin] [--file <path>]
   dsh-auth user list [--file <path>]
   dsh-auth user disable <name> [--file <path>]
+  dsh-auth user admin <enable|disable> <name> [--file <path>]
   dsh-auth user totp <enable|disable> <name> [--file <path>]
   dsh-auth skill install [--force]`;
 
@@ -67,10 +69,12 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
       tokens[2],
       argv.includes("--password-stdin"),
       argv.includes("--disabled"),
+      argv.includes("--admin"),
       io,
     );
   if (command === "list") return listUsers(file, io);
   if (command === "disable") return disableUser(file, tokens[2], io);
+  if (command === "admin") return setUserAdmin(file, tokens[2], tokens[3], io);
   if (command === "totp") return handleUserTotp(file, tokens[2], tokens[3], io);
   io.err(USAGE);
   return 1;
@@ -90,6 +94,7 @@ async function addUser(
   name: string | undefined,
   hasStdin: boolean,
   disabled: boolean,
+  admin: boolean,
   io: CliIo,
 ): Promise<number> {
   if (name === undefined || !USERNAME_RE.test(name)) {
@@ -112,7 +117,11 @@ async function addUser(
     return 1;
   }
   try {
-    snapshot.users.set(name, { passwordHash: await hashPassword(password), disabled });
+    snapshot.users.set(name, {
+      passwordHash: await hashPassword(password),
+      disabled,
+      ...(admin ? { role: "admin" as const } : {}),
+    });
     await writeUsersFile(file, snapshot);
   } catch (error) {
     io.err(errorMessage(error));
@@ -128,7 +137,10 @@ async function listUsers(file: string, io: CliIo): Promise<number> {
   const names = [...snapshot.users.keys()].sort(compareNames);
   for (const name of names) {
     const user = snapshot.users.get(name);
-    io.out(user?.disabled === true ? `${name} (disabled)` : name);
+    const markers: string[] = [];
+    if (user?.role === "admin") markers.push("admin");
+    if (user?.disabled === true) markers.push("disabled");
+    io.out(markers.length === 0 ? name : `${name} (${markers.join(", ")})`);
   }
   return 0;
 }
@@ -169,6 +181,45 @@ async function disableUser(file: string, name: string | undefined, io: CliIo): P
     return 1;
   }
   io.out(`user ${name} disabled`);
+  return 0;
+}
+
+/** `dsh-auth user admin <enable|disable> <name>`：授予/回收 admin 角色（D13，唯一入口）。 */
+async function setUserAdmin(
+  file: string,
+  command: string | undefined,
+  name: string | undefined,
+  io: CliIo,
+): Promise<number> {
+  if ((command !== "enable" && command !== "disable") || name === undefined) {
+    io.err(USAGE);
+    return 1;
+  }
+  const snapshot = await loadSnapshot(file, io);
+  if (snapshot === undefined) return 1;
+  const user = snapshot.users.get(name);
+  if (user === undefined) {
+    io.err(`user ${name} not found`);
+    return 1;
+  }
+  const next: UserRecord =
+    command === "enable"
+      ? { ...user, role: "admin" }
+      : {
+          passwordHash: user.passwordHash,
+          ...(user.totpSecret === undefined ? {} : { totpSecret: user.totpSecret }),
+          disabled: user.disabled,
+        };
+  try {
+    snapshot.users.set(name, next);
+    await writeUsersFile(file, snapshot);
+  } catch (error) {
+    io.err(errorMessage(error));
+    return 1;
+  }
+  io.out(
+    command === "enable" ? `user ${name} is now an admin` : `user ${name} is no longer an admin`,
+  );
   return 0;
 }
 

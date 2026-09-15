@@ -12,6 +12,8 @@ export interface UserRecord {
   /** M3 只解析不使用（M4 TOTP）。 */
   totpSecret?: string;
   disabled: boolean;
+  /** 管理员角色（D13）：缺省为普通用户；只能经 CLI 授予/回收。 */
+  role?: "admin";
 }
 
 export interface UsersSnapshot {
@@ -32,6 +34,7 @@ const userRecordSchema = z
     passwordHash: z.string().min(1),
     totpSecret: z.string().optional(),
     disabled: z.boolean().optional(),
+    role: z.literal("admin").optional(),
   })
   .strict();
 
@@ -89,6 +92,7 @@ export async function loadUsersFile(filePath: string): Promise<UsersLoadResult> 
       passwordHash: record.passwordHash,
       ...(record.totpSecret === undefined ? {} : { totpSecret: record.totpSecret }),
       disabled: record.disabled ?? false,
+      ...(record.role === undefined ? {} : { role: record.role }),
     });
   }
   return { snapshot: { users }, missing: false };
@@ -112,6 +116,7 @@ export async function writeUsersFile(filePath: string, snapshot: UsersSnapshot):
       passwordHash: record.passwordHash,
       ...(record.totpSecret === undefined ? {} : { totpSecret: record.totpSecret }),
       ...(record.disabled ? { disabled: true } : {}),
+      ...(record.role === undefined ? {} : { role: record.role }),
     };
   }
   const text = stringify({ version: 1, users });

@@ -17,6 +17,7 @@ users:
     passwordHash: scrypt$65536$8$1$enp6enp6enp6enp6enp6eg$qhquFN2piwx7cxC6jYN4yREJCPln_GQTzBbLmm4bj1k
     totpSecret: BASE32SECRET
     disabled: true
+    role: admin
   bob:
     passwordHash: scrypt$65536$8$1$enp6enp6enp6enp6enp6eg$qhquFN2piwx7cxC6jYN4yREJCPln_GQTzBbLmm4bj1k
 `;
@@ -59,8 +60,10 @@ describe("loadUsersFile", () => {
     expect(alice?.passwordHash).toMatch(/^scrypt\$/);
     expect(alice?.totpSecret).toBe("BASE32SECRET");
     expect(alice?.disabled).toBe(true);
+    expect(alice?.role).toBe("admin");
     expect(snapshot.users.get("bob")?.disabled).toBe(false);
     expect(snapshot.users.get("bob")?.totpSecret).toBeUndefined();
+    expect(snapshot.users.get("bob")?.role).toBeUndefined();
   });
 
   it("reports missing:true when the file does not exist", async () => {
@@ -90,6 +93,8 @@ describe("loadUsersFile", () => {
       "version: 1\nusers:\n  alice:\n    disabled: true\n", // 缺 passwordHash
       "version: 1\nusers:\n  bad name!:\n    passwordHash: a\n",
       "version: 1\nusers:\n  alice:\n    totpSecret: 42\n    passwordHash: a\n",
+      "version: 1\nusers:\n  alice:\n    passwordHash: a\n    role: superuser\n",
+      "version: 1\nusers:\n  alice:\n    passwordHash: a\n    role: true\n",
     ];
     for (const text of cases) {
       await fs.writeFile(file, text);
@@ -124,7 +129,7 @@ describe("writeUsersFile", () => {
     const snapshot: UsersSnapshot = {
       users: new Map([
         ["bob", { passwordHash: "h1", disabled: false }],
-        ["alice", { passwordHash: "h2", totpSecret: "S3", disabled: true }],
+        ["alice", { passwordHash: "h2", totpSecret: "S3", disabled: true, role: "admin" }],
       ]),
     };
     await writeUsersFile(file, snapshot);
@@ -135,10 +140,19 @@ users:
     passwordHash: h2
     totpSecret: S3
     disabled: true
+    role: admin
   bob:
     passwordHash: h1
 `);
     await expect(fs.stat(`${file}.tmp`)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("round-trips the admin role through write + load", async () => {
+    await writeUsersFile(file, {
+      users: new Map([["alice", { passwordHash: "h", disabled: false, role: "admin" }]]),
+    });
+    const { snapshot } = await loadUsersFile(file);
+    expect(snapshot.users.get("alice")?.role).toBe("admin");
   });
 
   it("creates parent directories automatically", async () => {

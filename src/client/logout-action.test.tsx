@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthContext } from "./context.ts";
 import { apply } from "./index.tsx";
 import { SettingsLogoutAction } from "./logout-action.tsx";
+import { USERS_DICT_EN, USERS_DICT_ZH } from "./users-dict.ts";
+import { SettingsUsersSection } from "./users-section.tsx";
 
 // React 18 的 act() 需要显式声明测试环境（否则只警告不生效）。
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -53,44 +55,50 @@ function makeApplyHarness() {
   return { ctx, localeRegisters, slots, injectCalls };
 }
 
-describe("apply", () => {
-  const fetchMock = vi.fn();
+const applyFetchMock = vi.fn();
 
-  beforeEach(() => {
-    vi.stubGlobal("fetch", fetchMock);
-  });
+beforeEach(() => {
+  vi.stubGlobal("fetch", applyFetchMock);
+});
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    fetchMock.mockReset();
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  applyFetchMock.mockReset();
+});
 
-  /** 通用 status 探针响应：默认 logoutOrder 1000（与 host Config 一致，不触发重注册）。 */
-  function defaultStatus(): unknown {
-    return { json: () => Promise.resolve({ authenticated: false, logoutOrder: 1000 }) };
-  }
+/** 通用 status 探针响应：默认 logoutOrder 1000（与 host Config 一致，不触发重注册）。 */
+function defaultStatus(): unknown {
+  return { json: () => Promise.resolve({ authenticated: false, logoutOrder: 1000 }) };
+}
 
-  it("registers zh/en logout dicts and adds the CTA to the settings General item slot", async () => {
-    fetchMock.mockResolvedValue(defaultStatus());
+describe("apply registration", () => {
+  it("registers zh/en dicts and mounts the users section plus the settings General CTA", async () => {
+    applyFetchMock.mockResolvedValue(defaultStatus());
     const h = makeApplyHarness();
     apply(h.ctx);
     for (const [, callback] of h.injectCalls) callback();
     await flushMicrotasks();
     expect(h.localeRegisters).toEqual([
-      ["auth", "zh", { logout: "退出登录", signedInAs: "当前登录" }],
-      ["auth", "en", { logout: "Sign out", signedInAs: "Signed in as" }],
+      ["auth", "zh", { logout: "退出登录", signedInAs: "当前登录", ...USERS_DICT_ZH }],
+      ["auth", "en", { logout: "Sign out", signedInAs: "Signed in as", ...USERS_DICT_EN }],
     ]);
     expect(h.injectCalls.map(([key]) => key).sort((a, b) => a.localeCompare(b))).toEqual([
       "settings.general.item",
+      "settings.section",
     ]);
     const register = h.slots.register as ReturnType<typeof vi.fn>;
-    expect(register).toHaveBeenCalledTimes(1);
-    const call = register.mock.calls[0] as unknown as [
+    expect(register).toHaveBeenCalledTimes(2);
+    const calls = register.mock.calls as unknown as [
       { name: string; id: string; locale: string; order: number; label: unknown },
       unknown,
-    ];
-    const [opts, component] = call;
-    expect(opts.name).toBe("settings.general.item");
+    ][];
+    const section = calls.find(([opts]) => opts.name === "settings.section")!;
+    expect(section[0].id).toBe("auth-users");
+    expect(section[0].locale).toBe("auth");
+    expect(section[0].order).toBe(30);
+    expect(section[1]).toBe(SettingsUsersSection);
+    const logout = calls.find(([opts]) => opts.name === "settings.general.item")!;
+    const [opts, component] = logout;
     expect(opts.id).toBe("dsh-auth-gate-logout");
     expect(opts.locale).toBe("auth");
     expect(opts.order).toBe(1000);
@@ -98,9 +106,11 @@ describe("apply", () => {
     expect((opts.label as () => string)()).toBe("Sign out");
     expect(component).toBe(SettingsLogoutAction);
   });
+});
 
+describe("apply logoutOrder", () => {
   it("re-registers the CTA with the host-configured logoutOrder when it differs from the default", async () => {
-    fetchMock.mockResolvedValue({
+    applyFetchMock.mockResolvedValue({
       json: () => Promise.resolve({ authenticated: true, logoutOrder: 5000 }),
     });
     const h = makeApplyHarness();
@@ -108,26 +118,30 @@ describe("apply", () => {
     for (const [, callback] of h.injectCalls) callback();
     const register = h.slots.register as ReturnType<typeof vi.fn>;
     await flushMicrotasks();
-    expect(register).toHaveBeenCalledTimes(2);
-    const first = register.mock.calls[0]![0] as { order: number };
-    const second = register.mock.calls[1]![0] as { order: number };
-    expect(first.order).toBe(1000);
-    expect(second.order).toBe(5000);
+    expect(register).toHaveBeenCalledTimes(3);
+    const logoutOrders = register.mock.calls
+      .map((call) => call[0] as { name: string; order: number })
+      .filter((opts) => opts.name === "settings.general.item")
+      .map((opts) => opts.order);
+    expect(logoutOrders).toEqual([1000, 5000]);
   });
 
   it("keeps a single default-order registration when the status probe fails", async () => {
-    fetchMock.mockRejectedValue(new Error("network"));
+    applyFetchMock.mockRejectedValue(new Error("network"));
     const h = makeApplyHarness();
     apply(h.ctx);
     for (const [, callback] of h.injectCalls) callback();
     const register = h.slots.register as ReturnType<typeof vi.fn>;
     await flushMicrotasks();
-    expect(register).toHaveBeenCalledTimes(1);
-    expect((register.mock.calls[0]![0] as { order: number }).order).toBe(1000);
+    const logoutCalls = register.mock.calls.filter(
+      (call) => (call[0] as { name: string }).name === "settings.general.item",
+    );
+    expect(logoutCalls).toHaveLength(1);
+    expect((logoutCalls[0]![0] as { order: number }).order).toBe(1000);
   });
 
   it("keeps a single default-order registration when the probe returns a non-numeric order", async () => {
-    fetchMock.mockResolvedValue({
+    applyFetchMock.mockResolvedValue({
       json: () => Promise.resolve({ authenticated: true, logoutOrder: "late" }),
     });
     const h = makeApplyHarness();
@@ -135,7 +149,10 @@ describe("apply", () => {
     for (const [, callback] of h.injectCalls) callback();
     const register = h.slots.register as ReturnType<typeof vi.fn>;
     await flushMicrotasks();
-    expect(register).toHaveBeenCalledTimes(1);
+    const logoutCalls = register.mock.calls.filter(
+      (call) => (call[0] as { name: string }).name === "settings.general.item",
+    );
+    expect(logoutCalls).toHaveLength(1);
   });
 });
 

@@ -41,6 +41,7 @@ const ROOT_FILES = new Set([
   "index.password.test.ts",
   "cli.ts",
   "cli.test.ts",
+  "cli.admin.test.ts",
   "cli.totp.test.ts",
   "proxy-cli.ts",
   "proxy-cli.test.ts",
@@ -51,7 +52,10 @@ const ROOT_FILES = new Set([
   "integration.session.test.ts",
   "integration.totp.test.ts",
   "integration.totp-hardening.test.ts",
+  "integration.users.test.ts",
+  "integration.users-import.test.ts",
   "integration-totp-helpers.ts",
+  "integration-users-helpers.ts",
   "guard-proxy-deny.test.ts",
 ]);
 const errors = [];
