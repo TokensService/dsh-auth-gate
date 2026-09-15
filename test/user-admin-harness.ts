@@ -6,12 +6,19 @@ import { join } from "node:path";
 import type { HttpHandler } from "../src/gate/index.js";
 import { SessionStore, type Session } from "../src/session/index.js";
 import {
+  loadSettingsFile,
   loadUsersFile,
+  writeSettingsFile,
   writeUsersFile,
   type UserRecord,
   type UsersSnapshot,
 } from "../src/shared/index.js";
 import { hashPassword } from "../src/features/password/password.js";
+import {
+  registerSessionSettingsEndpoints,
+  SETTINGS_PATH,
+  type SessionSettingsDeps,
+} from "../src/features/password/session-settings-endpoints.js";
 import {
   registerUserAdminEndpoints,
   USERS_PATH,
@@ -114,25 +121,59 @@ export function makeReq(options: {
 
 export interface UserAdminHarness {
   deps: UserAdminDeps;
+  settingsDeps: SessionSettingsDeps;
   handler: HttpHandler;
   importHandler: HttpHandler;
+  settingsHandler: HttpHandler;
   store: SessionStore;
   usersFile: string;
-  /** 临时目录根（users.yaml 所在，也是导入测试放置 txt 的位置）。 */
+  settingsFile: string;
+  /** 临时目录根（users.yaml/settings.yaml 所在，也是导入测试放置 txt 的位置）。 */
   dir: string;
   logs: { level: string; message: unknown }[];
   /** 以指定用户身份建会话（默认 alice），返回 Cookie 头值。 */
   cookieFor(username?: string): Promise<string>;
   call(req: IncomingMessage): Promise<FakeRes>;
   callImport(req: IncomingMessage): Promise<FakeRes>;
+  callSettings(req: IncomingMessage): Promise<FakeRes>;
   snapshot(): Promise<UsersSnapshot>;
   cleanup(): void;
 }
 
+interface Route {
+  kind: "exact" | "prefix";
+  path: string;
+  handler: HttpHandler;
+}
+
+/** 按 exact path 取已注册 handler（缺失即测试装配错误，直接抛）。 */
+function mustRoute(routes: Route[], path: string, label: string): HttpHandler {
+  const route = routes.find((r) => r.kind === "exact" && r.path === path);
+  if (route === undefined) throw new Error(`${label} route not registered`);
+  return route.handler;
+}
+
+/** settings 端点子装配：与 users.yaml 同 tempdir 的 settings.yaml + defaultTtl 604800。 */
+function registerSettings(
+  deps: UserAdminDeps,
+  dir: string,
+): { settingsDeps: SessionSettingsDeps; settingsFile: string } {
+  const settingsFile = join(dir, "settings.yaml");
+  const settingsDeps: SessionSettingsDeps = {
+    ...deps,
+    settingsPath: settingsFile,
+    loadSettings: () => loadSettingsFile(settingsFile),
+    writeSettings: (settings) => writeSettingsFile(settingsFile, settings),
+    defaultTtl: 604800,
+  };
+  registerSessionSettingsEndpoints(settingsDeps);
+  return { settingsDeps, settingsFile };
+}
+
 /**
- * /auth/users 测试基座：临时目录里的真实 users.yaml（load/write 走真实
- * loadUsersFile/writeUsersFile 往返）+ 内存会话表。初始用户 alice（admin，enabled）+
- * bob（非 admin，enabled；可换）。TOTP 注入固定假值（确定性断言）。
+ * /auth/users 测试基座：临时目录里的真实 users.yaml + settings.yaml（load/write 走
+ * 真实文件往返）+ 内存会话表。初始用户 alice（admin，enabled）+ bob（非 admin，
+ * enabled；可换）。TOTP 注入固定假值（确定性断言）；settings 端点 defaultTtl 604800。
  */
 export async function makeUserAdminHarness(options?: {
   alice?: Partial<UserRecord> & { passwordHash?: string };
@@ -159,7 +200,7 @@ export async function makeUserAdminHarness(options?: {
   });
   const store = new SessionStore(new MemTable());
   const logs: UserAdminHarness["logs"] = [];
-  const routes: { kind: "exact" | "prefix"; path: string; handler: HttpHandler }[] = [];
+  const routes: Route[] = [];
   const deps: UserAdminDeps = {
     register: (route) => {
       routes.push(route);
@@ -179,32 +220,33 @@ export async function makeUserAdminHarness(options?: {
   };
   registerUserAdminEndpoints(deps);
   registerUserImportEndpoints(deps);
-  const route = routes.find((r) => r.kind === "exact" && r.path === USERS_PATH);
-  if (route === undefined) throw new Error("users route not registered");
-  const importRoute = routes.find((r) => r.kind === "exact" && r.path === USERS_IMPORT_PATH);
-  if (importRoute === undefined) throw new Error("users import route not registered");
-  const handler = route.handler;
-  const importHandler = importRoute.handler;
+  const { settingsDeps, settingsFile } = registerSettings(deps, dir);
+  const handler = mustRoute(routes, USERS_PATH, "users");
+  const importHandler = mustRoute(routes, USERS_IMPORT_PATH, "users import");
+  const settingsHandler = mustRoute(routes, SETTINGS_PATH, "settings");
+  const callWith =
+    (target: HttpHandler) =>
+    async (req: IncomingMessage): Promise<FakeRes> => {
+      const res = makeRes();
+      await target(req, res.res);
+      return res;
+    };
   return {
     deps,
+    settingsDeps,
     handler,
     importHandler,
+    settingsHandler,
     store,
     usersFile,
+    settingsFile,
     dir,
     logs,
     cookieFor: async (username = "alice") =>
       `dsh_auth=${(await store.create(username, 60_000)).token}`,
-    call: async (req) => {
-      const res = makeRes();
-      await handler(req, res.res);
-      return res;
-    },
-    callImport: async (req) => {
-      const res = makeRes();
-      await importHandler(req, res.res);
-      return res;
-    },
+    call: callWith(handler),
+    callImport: callWith(importHandler),
+    callSettings: callWith(settingsHandler),
     snapshot: async () => (await loadUsersFile(usersFile)).snapshot,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };

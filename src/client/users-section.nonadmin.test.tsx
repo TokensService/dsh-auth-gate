@@ -59,6 +59,9 @@ function makeFetchMock(users: AdminUser[], mutation?: { status: number; body: un
     const parsed =
       init?.body === undefined ? undefined : (JSON.parse(init.body) as Record<string, unknown>);
     calls.push({ url, method, ...(parsed === undefined ? {} : { body: parsed }) });
+    if (url === "/auth/settings") {
+      return Promise.resolve(jsonResponse(200, { sessionTtl: 604800, defaultTtl: 604800 }));
+    }
     const body = method === "GET" ? { users } : (mutation?.body ?? {});
     const status = method === "GET" ? 200 : (mutation?.status ?? 200);
     return Promise.resolve(jsonResponse(status, body));
@@ -137,7 +140,7 @@ describe("SettingsUsersSection as non-admin (D13)", () => {
     const { root, container } = await renderSection();
     await click(buttonByText(rowOf(container, "carol"), "Change password"));
     await typeInto(container.querySelector("input[type='password']")!, "new-pw");
-    await click(buttonByText(container, "Save"));
+    await click(buttonByText(rowOf(container, "carol"), "Save"));
     expect(
       calls.some(
         (c) =>
@@ -159,10 +162,21 @@ describe("SettingsUsersSection as non-admin (D13)", () => {
     const { root, container } = await renderSection();
     await click(buttonByText(rowOf(container, "carol"), "Change password"));
     await typeInto(container.querySelector("input[type='password']")!, "new-pw");
-    await click(buttonByText(container, "Save"));
+    await click(buttonByText(rowOf(container, "carol"), "Save"));
     expect(container.querySelector("[role='alert']")?.textContent).toBe(
       "Permission denied: admins only.",
     );
+    root.unmount();
+    container.remove();
+  });
+
+  it("shows the login timeout read-only (value only, no editor)", async () => {
+    const { mock } = makeFetchMock([ALICE_OTHER, CAROL_SELF]);
+    fetchMock.mockImplementation(mock);
+    const { root, container } = await renderSection();
+    expect(container.textContent).toContain("Login timeout");
+    expect(container.textContent).toContain("168 hours (7 days)");
+    expect(container.querySelector("input[type='number']")).toBeNull();
     root.unmount();
     container.remove();
   });

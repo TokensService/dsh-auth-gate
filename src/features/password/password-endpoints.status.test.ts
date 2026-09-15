@@ -128,7 +128,7 @@ function makeHarness(options?: { cookieSecure?: boolean; logoutOrder?: number })
       sessions: () => store,
       cookieName: "dsh_auth",
       cookieSecure: options?.cookieSecure ?? true,
-      sessionTtl: 604800,
+      sessionTtl: () => Promise.resolve(604800),
       logoutOrder: options?.logoutOrder ?? 1000,
       usersPath: "/tmp/users.yaml",
       loadUsers: () =>

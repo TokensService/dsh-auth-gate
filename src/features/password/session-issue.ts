@@ -5,7 +5,8 @@ import { buildSetCookie, type SessionStore } from "../../session/index.js";
 export interface IssueSessionDeps {
   cookieName: string;
   cookieSecure: boolean;
-  sessionTtl: number;
+  /** 会话 TTL（秒）解析器：每次签发现取（settings.yaml 运行期可改，D16）。 */
+  sessionTtl: () => Promise<number>;
   /** 可选：dsh launch-token 桥（0.1.2-alpha+）。返回相对 `/?token=` 或 undefined。 */
   launchTokenBridge?: () => Promise<string | undefined>;
   logger: {
@@ -25,11 +26,12 @@ export async function issueSession(
   next: string,
   extraSetCookie?: string[],
 ): Promise<void> {
-  const { token: sessionToken } = await store.create(username, deps.sessionTtl * 1000);
+  const ttl = await deps.sessionTtl();
+  const { token: sessionToken } = await store.create(username, ttl * 1000);
   res.setHeader("cache-control", "no-store");
   const cookies = [
     ...(extraSetCookie ?? []),
-    buildSetCookie(deps.cookieName, sessionToken, deps.sessionTtl, deps.cookieSecure),
+    buildSetCookie(deps.cookieName, sessionToken, ttl, deps.cookieSecure),
   ];
   res.setHeader("set-cookie", cookies);
   let location = next;

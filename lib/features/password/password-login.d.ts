@@ -6,7 +6,7 @@ export interface PasswordLoginDeps {
     sessions: () => SessionStore | undefined;
     cookieName: string;
     cookieSecure: boolean;
-    sessionTtl: number;
+    sessionTtl: () => Promise<number>;
     /** 仅用于"文件缺失"warn 消息（P23）。 */
     usersPath: string;
     loadUsers: () => Promise<UsersLoadResult>;

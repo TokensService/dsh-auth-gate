@@ -148,7 +148,7 @@ export function makeHarness(): Harness {
     sessions: () => storeRef,
     cookieName: "dsh_auth",
     cookieSecure: false,
-    sessionTtl: 604800,
+    sessionTtl: () => Promise.resolve(604800),
     logoutOrder: 1000,
     usersPath: "/tmp/users.yaml",
     loadUsers: () =>

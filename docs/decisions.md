@@ -143,3 +143,15 @@ admin，PATCH 非 admin 只能改自己的密码（其余 → `403 forbidden`）
 .txt」后，{path} 以最少入口覆盖全部服务端导入场景，端点与页面同步收窄。
 → [zh](decisions/implemented/2026-09-14-server-path-import.zh.md) ·
 [en](decisions/implemented/2026-09-14-server-path-import.en.md)
+
+## D16. 登录超时运行期可配（settings.yaml + /auth/settings）
+
+用户管理页新增「登录超时」设置：admin 运行期修改会话 TTL，落在与 users.yaml
+同目录的 settings.yaml；新 exact 路由 `/auth/settings`（GET 任意会话、
+PATCH 仅 admin，整型秒 [60, 31536000]）；登录每次签发现读，只影响新会话。
+**替代方案**：cordis 配置覆盖（需重启 + shell）；session domain 新表（迁移
+语义未知）；并入 users.yaml（strict schema 需版本迁移）；作用于存量会话。
+**为什么**：复用 users.yaml 原子写文件模式，零新配置零新依赖，失败出口明确，
+权限矩阵不变。
+→ [zh](decisions/implemented/2026-09-15-login-timeout-setting.zh.md) ·
+[en](decisions/implemented/2026-09-15-login-timeout-setting.en.md)

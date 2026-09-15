@@ -3,6 +3,7 @@ import type { LogoutTranslate } from "./logout-action.tsx";
 import { AddUserForm, UserRow } from "./user-rows.tsx";
 import { ImportPanel } from "./user-import.tsx";
 import { TotpReveal, type TotpRevealData } from "./totp-reveal.tsx";
+import { SessionTimeoutPanel } from "./session-timeout.tsx";
 import {
   createUser,
   deleteUser,
@@ -161,6 +162,7 @@ function ReadyPanel(props: ReadyPanelProps) {
         </div>
       )}
       {reveal !== null && <TotpReveal reveal={reveal} t={tr} onDismiss={props.onDismissReveal} />}
+      <SessionTimeoutPanel tr={tr} isAdmin={isAdmin} />
       {users.length === 0 ? (
         <div style={SUB_STYLE}>{tr("users.empty")}</div>
       ) : (

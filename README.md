@@ -71,7 +71,10 @@ codebase. Solid engineering worth building on.
   notice there.) The page also **batch-imports users from a txt file** (one
   `username,password` per line): pick a local file from your machine, or enter
   the absolute path of a `.txt` anywhere on the server - both flows validate
-  every line and write all-or-nothing.
+  every line and write all-or-nothing. The page also hosts a **login timeout
+  setting**: an admin can change how long sessions stay signed in (persisted
+  in `settings.yaml` next to `users.yaml`); the change applies to new sign-ins
+  only - issued sessions keep their original expiry.
 
 ## Quick start
 

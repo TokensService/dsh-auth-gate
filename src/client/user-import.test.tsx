@@ -68,6 +68,9 @@ function makeFetchMock(options: {
     const parsed =
       init?.body === undefined ? undefined : (JSON.parse(init.body) as Record<string, unknown>);
     calls.push({ url, method, ...(parsed === undefined ? {} : { body: parsed }) });
+    if (url === "/auth/settings") {
+      return Promise.resolve(jsonResponse(200, { sessionTtl: 604800, defaultTtl: 604800 }));
+    }
     if (url === "/auth/users/import") {
       const result = options.importResult ?? { status: 201, body: { created: 2 } };
       return Promise.resolve(jsonResponse(result.status, result.body));

@@ -1,0 +1,1 @@
+{"version":3,"file":"session-timeout.d.ts","sourceRoot":"","sources":["../../src/client/session-timeout.tsx"],"names":[],"mappings":"AAWA,KAAK,SAAS,GAAG,CAAC,GAAG,EAAE,MAAM,KAAK,MAAM,CAAC;AAEzC,MAAM,WAAW,wBAAwB;IACvC,EAAE,EAAE,SAAS,CAAC;IACd,8DAA8D;IAC9D,OAAO,EAAE,OAAO,CAAC;CAClB;AAgDD;;;GAGG;AACH,wBAAgB,mBAAmB,CAAC,EAAE,EAAE,EAAE,OAAO,EAAE,EAAE,wBAAwB,+BAmE5E"}

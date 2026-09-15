@@ -4,12 +4,11 @@ import z from "@deepseek-ai/schemastery";
 import { registerAuthEndpoints, safeEqual, TokenGate } from "./features/token/index.js";
 import { wrapServer, type Gate, type WrappableServer } from "./gate/index.js";
 import {
+  makeSessionTtlResolver,
   PasswordGate,
+  registerManagementEndpoints,
   registerPasswordEndpoints,
-  registerUserAdminEndpoints,
-  registerUserImportEndpoints,
   verifyPassword,
-  type UserAdminDeps,
 } from "./features/password/index.js";
 import {
   generateTotpSecret,
@@ -19,9 +18,9 @@ import {
 } from "./features/totp/index.js";
 import {
   LoginRateLimiter,
+  defaultSettingsFilePath,
   defaultUsersFilePath,
   loadUsersFile,
-  writeUsersFile,
 } from "./shared/index.js";
 import { assertGuarded } from "./gate/index.js";
 import { makeLaunchTokenBridge } from "./launch-token-bridge.js";
@@ -205,12 +204,14 @@ function mountAuthEndpoints(
       logger: log,
     });
   }
+  // 登录超时（D16）：settings.yaml 与 users.yaml 同目录；会话 TTL 每次签发现读。
+  const settingsPath = defaultSettingsFilePath(usersPath);
   const disposeLogin = registerPasswordEndpoints({
     register: (route) => server.register(route), // 包装后的 register（增量保险路径）
     sessions: () => auth.sessions,
     cookieName: config.cookieName,
     cookieSecure: config.cookieSecure,
-    sessionTtl: config.sessionTtl,
+    sessionTtl: makeSessionTtlResolver(settingsPath, config.sessionTtl, log),
     usersPath,
     loadUsers: () => loadUsersFile(usersPath),
     verify: verifyPassword,
@@ -224,24 +225,22 @@ function mountAuthEndpoints(
     logoutOrder: config.logoutOrder,
     logger: log,
   });
-  // 用户管理 + 批量导入 API（password 模式专属）：/auth 白名单内，端点自做会话校验；
-  // TOTP 能力按 D9 模式从 features/totp 装配注入（同层互禁）；两组端点共享同一 deps。
-  const userAdminDeps: UserAdminDeps = {
+  // 管理 API（用户 + 批量导入 + 登录超时设置，password 模式专属）：/auth 白名单内，
+  // 端点自做会话校验；TOTP 能力按 D9 模式注入（同层互禁）；users.yaml 读写按
+  // usersPath 在装配处自绑定。
+  const disposeManagement = registerManagementEndpoints({
     register: (route) => server.register(route),
     sessions: () => auth.sessions,
     cookieName: config.cookieName,
     usersPath,
-    loadUsers: () => loadUsersFile(usersPath),
-    writeUsers: (snapshot) => writeUsersFile(usersPath, snapshot),
+    settingsPath,
+    defaultTtl: config.sessionTtl,
     generateTotpSecret,
     totpUri,
     logger: log,
-  };
-  const disposeUserAdmin = registerUserAdminEndpoints(userAdminDeps);
-  const disposeUserImport = registerUserImportEndpoints(userAdminDeps);
+  });
   return () => {
-    disposeUserImport();
-    disposeUserAdmin();
+    disposeManagement();
     disposeLogin();
   };
 }

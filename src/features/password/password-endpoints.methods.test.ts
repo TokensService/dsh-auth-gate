@@ -61,7 +61,7 @@ function makeDeps(): PasswordEndpointsDeps {
     sessions: () => undefined, // 本文件用例不走到会话分支（405/404/415/413/页面渲染提前短路）
     cookieName: "dsh_auth",
     cookieSecure: false,
-    sessionTtl: 604800,
+    sessionTtl: () => Promise.resolve(604800),
     logoutOrder: 1000,
     usersPath: "/tmp/users.yaml",
     loadUsers: () =>

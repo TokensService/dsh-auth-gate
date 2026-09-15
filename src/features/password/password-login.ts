@@ -29,7 +29,7 @@ export interface PasswordLoginDeps {
   sessions: () => SessionStore | undefined;
   cookieName: string;
   cookieSecure: boolean;
-  sessionTtl: number; // 秒
+  sessionTtl: () => Promise<number>; // 秒，每次签发现取（settings.yaml 运行期可改，D16）
   /** 仅用于"文件缺失"warn 消息（P23）。 */
   usersPath: string;
   loadUsers: () => Promise<UsersLoadResult>;
