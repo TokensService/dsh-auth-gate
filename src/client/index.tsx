@@ -1,5 +1,6 @@
 import type { AuthContext } from "./context.ts";
 import { SettingsLogoutAction } from "./logout-action.tsx";
+import { startSessionWatcher } from "./session-watcher.ts";
 import { USERS_DICT_EN, USERS_DICT_ZH } from "./users-dict.ts";
 import { SettingsUsersSection } from "./users-section.tsx";
 
@@ -33,6 +34,8 @@ const USERS_SECTION_ORDER = 30;
  *    槽，General 页堆叠渲染，按 order 升序）：会话带用户名时（password 模式），
  *    按钮上方显示「当前登录：\<username\>」，数据来自 `/auth/status` 探针
  *    （token 模式 username 恒 null，不渲染该行）。
+ * 3. 会话过期看门狗（`ctx.effect` 常驻，无 UI）：周期 + 焦点事件探
+ *    `/auth/status`，确认过期即整页跳转登录页，避免过期会话停在登录后界面。
  *
  * 登出顺序可配置：先以默认 order（1000）注册（探针失败/未开始前按钮也可见），再探
  * `/auth/status` 读取 host 配置的 `logoutOrder`，与默认不同则按配置值重注册
@@ -61,6 +64,11 @@ export function apply(ctx: AuthContext): void {
     ],
     "auth: logout dictionary",
   );
+
+  // 会话过期看门狗（root 作用域常驻）：周期 + 焦点事件探 /auth/status，确认
+  // 过期即整页跳回登录页。SPA 登录后不再整页导航，没有它过期会话会一直停在
+  // 登录后界面（守卫只能拒绝「新」请求）。
+  ctx.effect(() => startSessionWatcher(), "auth: session watcher");
 
   // 绑定 translate：读取活动语言（thunk 每次投影重读，跟随语言切换）。
   const t = ctx.locale.bind(AUTH_NS);

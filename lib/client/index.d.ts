@@ -9,6 +9,8 @@ import type { AuthContext } from "./context.ts";
  *    槽，General 页堆叠渲染，按 order 升序）：会话带用户名时（password 模式），
  *    按钮上方显示「当前登录：\<username\>」，数据来自 `/auth/status` 探针
  *    （token 模式 username 恒 null，不渲染该行）。
+ * 3. 会话过期看门狗（`ctx.effect` 常驻，无 UI）：周期 + 焦点事件探
+ *    `/auth/status`，确认过期即整页跳转登录页，避免过期会话停在登录后界面。
  *
  * 登出顺序可配置：先以默认 order（1000）注册（探针失败/未开始前按钮也可见），再探
  * `/auth/status` 读取 host 配置的 `logoutOrder`，与默认不同则按配置值重注册

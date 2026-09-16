@@ -138,6 +138,13 @@ as JSON:
 the shared secret has no per-user identity. Any page inside dsh web can fetch
 this endpoint to display the current user.
 
+The client bundle also runs a background session watcher: it polls
+`/auth/status` every 30 seconds and whenever the tab regains focus, and once
+the session has expired (or was revoked from another tab) the page redirects
+to the login screen instead of leaving you on a stale signed-in view.
+Transient probe failures (server restarts, network hiccups) never trigger the
+redirect.
+
 ## Configuration
 
 The bundle mount (id `dsh-auth-gate`, inserted by `dsh plugin add`) uses the
