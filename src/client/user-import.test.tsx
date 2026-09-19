@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdminUser, ServerImportFile } from "./users-api.ts";
+import type { AdminUser } from "./users-api.ts";
 import { USERS_DICT_EN } from "./users-dict.ts";
 import { SettingsUsersSection } from "./users-section.tsx";
 
@@ -57,10 +57,9 @@ interface Call {
   body?: Record<string, unknown>;
 }
 
-/** 路由式 fetch mock：/auth/users 列表 + /auth/users/import 列表与导入。 */
+/** 路由式 fetch mock：/auth/users 列表 + /auth/users/import 导入。 */
 function makeFetchMock(options: {
   users: AdminUser[];
-  files?: ServerImportFile[];
   importResult?: { status: number; body: unknown };
 }) {
   const calls: Call[] = [];
@@ -69,9 +68,10 @@ function makeFetchMock(options: {
     const parsed =
       init?.body === undefined ? undefined : (JSON.parse(init.body) as Record<string, unknown>);
     calls.push({ url, method, ...(parsed === undefined ? {} : { body: parsed }) });
+    if (url === "/auth/settings") {
+      return Promise.resolve(jsonResponse(200, { sessionTtl: 604800, defaultTtl: 604800 }));
+    }
     if (url === "/auth/users/import") {
-      if (method === "GET")
-        return Promise.resolve(jsonResponse(200, { files: options.files ?? [] }));
       const result = options.importResult ?? { status: 201, body: { created: 2 } };
       return Promise.resolve(jsonResponse(result.status, result.body));
     }
@@ -104,6 +104,20 @@ async function pickFile(input: HTMLInputElement, file: File): Promise<void> {
   });
 }
 
+/** 受控 input 填值（native setter 绑定后绕过 React 的 value 跟踪，再发 input 事件）。 */
+async function typeText(input: HTMLInputElement, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )?.set?.bind(input);
+  if (setter === undefined) throw new Error("input value setter missing");
+  await act(async () => {
+    setter(value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushMicrotasks();
+  });
+}
+
 const fetchMock: FetchMock = vi.fn();
 
 beforeEach(() => {
@@ -131,18 +145,6 @@ describe("SettingsUsersSection import panel visibility (D14)", () => {
     second.root.unmount();
     second.container.remove();
   });
-
-  it("shows the empty hint when the server imports dir has no txt", async () => {
-    const { mock } = makeFetchMock({ users: [ALICE], files: [] });
-    fetchMock.mockImplementation(mock);
-    const { root, container } = await renderSection();
-    await click(buttonByText(container, "Server file"));
-    expect(container.textContent).toContain(
-      "No .txt files in the server's imports/ directory yet.",
-    );
-    root.unmount();
-    container.remove();
-  });
 });
 
 describe("SettingsUsersSection import flows (D14)", () => {
@@ -167,27 +169,32 @@ describe("SettingsUsersSection import flows (D14)", () => {
     container.remove();
   });
 
-  it("lists server files in server mode and imports the selected one", async () => {
-    const { mock, calls } = makeFetchMock({
-      users: [ALICE],
-      files: [{ name: "team.txt", size: 10 }],
-    });
+  it("imports from an absolute server path without any file listing", async () => {
+    const { mock, calls } = makeFetchMock({ users: [ALICE] });
     fetchMock.mockImplementation(mock);
     const { root, container } = await renderSection();
-    await click(buttonByText(container, "Server file"));
-    expect(calls.some((c) => c.url === "/auth/users/import" && c.method === "GET")).toBe(true);
-    expect(container.textContent).toContain("team.txt (10 B)");
+    await click(buttonByText(container, "Server path"));
+    expect(calls.some((c) => c.url === "/auth/users/import" && c.method === "GET")).toBe(false);
+    const input = container.querySelector<HTMLInputElement>(
+      "input[aria-label='Absolute file path on the server']",
+    )!;
+    await typeText(input, "/srv/team.txt");
     await click(buttonByText(container, "Import"));
     expect(
       calls.some(
         (c) =>
-          c.url === "/auth/users/import" && c.method === "POST" && c.body?.["file"] === "team.txt",
+          c.url === "/auth/users/import" &&
+          c.method === "POST" &&
+          c.body?.["path"] === "/srv/team.txt",
       ),
     ).toBe(true);
+    expect(container.textContent).toContain("Imported 2 users.");
     root.unmount();
     container.remove();
   });
+});
 
+describe("SettingsUsersSection import failure rendering (D14)", () => {
   it("renders per-line failures with localized reasons", async () => {
     const { mock } = makeFetchMock({
       users: [ALICE],

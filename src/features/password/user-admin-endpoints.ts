@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { compareNames, USERNAME_RE } from "../../shared/index.js";
+import { compareNames, loadUsersFile, USERNAME_RE, writeUsersFile } from "../../shared/index.js";
 import { hashPassword } from "./password.js";
 import {
   isAdmin,
@@ -13,6 +13,11 @@ import {
   type UserAdminDeps,
 } from "./user-admin-common.js";
 import { handleUserDelete, handleUserUpdate } from "./user-admin-mutations.js";
+import { registerUserImportEndpoints } from "./user-admin-import.js";
+import {
+  registerSessionSettingsEndpoints,
+  sessionSettingsDeps,
+} from "./session-settings-endpoints.js";
 
 export type { UserAdminDeps, UserAdminErrorCode } from "./user-admin-common.js";
 
@@ -88,4 +93,36 @@ async function handleCreate(
   if (!(await writeUsersOr503(deps, res, loaded.snapshot))) return;
   deps.logger.info(`user ${username} added via /auth/users`);
   sendJson(res, 201, { user: viewOf(username, { passwordHash: "", disabled }, subject) });
+}
+
+/**
+ * 管理 API 装配参数：UserAdminDeps 去掉文件读写（本函数按 usersPath 自绑定真实
+ * loadUsersFile/writeUsersFile）+ settings 端点的文件路径与配置默认 TTL。
+ */
+export type ManagementDeps = Omit<UserAdminDeps, "loadUsers" | "writeUsers"> & {
+  settingsPath: string;
+  defaultTtl: number;
+};
+
+/**
+ * 注册 password 模式的全部管理 API：`/auth/users` + `/auth/users/import` +
+ * `/auth/settings`（D16），返回合并 disposer（逆序释放）。users.yaml 的读写在本
+ * 函数内绑定（index.ts 只传路径），settings deps 按共享 userAdminDeps 扩展。
+ */
+export function registerManagementEndpoints(deps: ManagementDeps): () => void {
+  const userDeps: UserAdminDeps = {
+    ...deps,
+    loadUsers: () => loadUsersFile(deps.usersPath),
+    writeUsers: (snapshot) => writeUsersFile(deps.usersPath, snapshot),
+  };
+  const disposeUsers = registerUserAdminEndpoints(userDeps);
+  const disposeImport = registerUserImportEndpoints(userDeps);
+  const disposeSettings = registerSessionSettingsEndpoints(
+    sessionSettingsDeps(userDeps, deps.settingsPath, deps.defaultTtl),
+  );
+  return () => {
+    disposeSettings();
+    disposeImport();
+    disposeUsers();
+  };
 }

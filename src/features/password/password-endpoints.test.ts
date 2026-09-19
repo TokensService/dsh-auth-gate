@@ -128,7 +128,7 @@ function makeHarness(options?: { cookieSecure?: boolean; logoutOrder?: number })
       sessions: () => store,
       cookieName: "dsh_auth",
       cookieSecure: options?.cookieSecure ?? true,
-      sessionTtl: 604800,
+      sessionTtl: () => Promise.resolve(604800),
       logoutOrder: options?.logoutOrder ?? 1000,
       usersPath: "/tmp/users.yaml",
       loadUsers: () =>
@@ -201,6 +201,20 @@ describe("GET /auth/login (password)", () => {
     )(makeReq({ method: "GET", url: "/auth/login", cookie: `dsh_auth=${token}` }), res.res);
     expect(res.status).toBe(200);
   });
+});
+
+it("issues a persistent password session when sessionTtl resolves to zero", async () => {
+  const harness = makeHarness();
+  harness.deps.sessionTtl = () => Promise.resolve(0);
+  registerPasswordEndpoints(harness.deps);
+  const res = makeRes();
+  await handlerOf(
+    harness,
+    "exact",
+    "/auth/login",
+  )(makeReq({ method: "POST", body: Buffer.from("username=alice&password=pw") }), res.res);
+  expect([...harness.table.entries()][0]?.[1].expiresAt).toBe(0);
+  expect(res.headers["set-cookie"]).toContain("Max-Age=2147483647");
 });
 
 describe("POST /auth/logout", () => {

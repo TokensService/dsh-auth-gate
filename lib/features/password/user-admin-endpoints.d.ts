@@ -11,4 +11,18 @@ export declare const USERS_PATH = "/auth/users";
  * 用户，非 admin 只能改自己的密码（带 disabled/totp 字段或目标非己 → 403 forbidden）。
  */
 export declare function registerUserAdminEndpoints(deps: UserAdminDeps): () => void;
+/**
+ * 管理 API 装配参数：UserAdminDeps 去掉文件读写（本函数按 usersPath 自绑定真实
+ * loadUsersFile/writeUsersFile）+ settings 端点的文件路径与配置默认 TTL。
+ */
+export type ManagementDeps = Omit<UserAdminDeps, "loadUsers" | "writeUsers"> & {
+    settingsPath: string;
+    defaultTtl: number;
+};
+/**
+ * 注册 password 模式的全部管理 API：`/auth/users` + `/auth/users/import` +
+ * `/auth/settings`（D16），返回合并 disposer（逆序释放）。users.yaml 的读写在本
+ * 函数内绑定（index.ts 只传路径），settings deps 按共享 userAdminDeps 扩展。
+ */
+export declare function registerManagementEndpoints(deps: ManagementDeps): () => void;
 //# sourceMappingURL=user-admin-endpoints.d.ts.map

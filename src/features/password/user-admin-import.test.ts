@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { verifyPassword } from "./password.js";
@@ -59,37 +59,11 @@ describe("parseImportText", () => {
   });
 });
 
-describe("GET /auth/users/import", () => {
-  it("requires a session (401) and an admin role (403)", async () => {
-    const h = await makeHarness();
-    const anon = await h.callImport(makeReq({}));
-    expect(anon.status).toBe(401);
-    const nonAdmin = await h.callImport(makeReq({ cookie: await h.cookieFor("bob") }));
-    expect(nonAdmin.status).toBe(403);
-    expect(JSON.parse(nonAdmin.body)).toEqual({ error: "forbidden" });
-  });
-
-  it("returns an empty list when the imports dir is missing", async () => {
+describe("/auth/users/import method guard", () => {
+  it("answers 405 to non-POST methods (the GET list left with the removed sandbox mode)", async () => {
     const h = await makeHarness();
     const res = await h.callImport(makeReq({ cookie: await h.cookieFor() }));
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ files: [] });
-  });
-
-  it("lists only whitelisted .txt files with sizes, sorted by name", async () => {
-    const h = await makeHarness();
-    mkdirSync(h.importsDir, { recursive: true });
-    writeFileSync(join(h.importsDir, "b-team.txt"), "x");
-    writeFileSync(join(h.importsDir, "a-team.txt"), "xy");
-    writeFileSync(join(h.importsDir, "notes.md"), "ignored");
-    mkdirSync(join(h.importsDir, "dir.txt"));
-    const res = await h.callImport(makeReq({ cookie: await h.cookieFor() }));
-    expect(JSON.parse(res.body)).toEqual({
-      files: [
-        { name: "a-team.txt", size: 2 },
-        { name: "b-team.txt", size: 1 },
-      ],
-    });
+    expect(res.status).toBe(405);
   });
 });
 
@@ -145,7 +119,8 @@ describe("POST /auth/users/import {text}", () => {
       error: "too_many_entries",
     });
     expect(JSON.parse((await post(h, {})).body)).toEqual({ error: "invalid_field" });
-    expect(JSON.parse((await post(h, { text: "a,b", file: "x.txt" })).body)).toEqual({
+    // {file} 随 imports/ 沙箱模式一并移除：不再被识别为来源。
+    expect(JSON.parse((await post(h, { file: "x.txt" })).body)).toEqual({
       error: "invalid_field",
     });
   });
@@ -158,20 +133,24 @@ describe("POST /auth/users/import {text}", () => {
   });
 });
 
-describe("POST /auth/users/import {file}", () => {
-  it("imports a txt from the server imports dir", async () => {
+describe("POST /auth/users/import {path}", () => {
+  it("imports a txt from an absolute path on the server", async () => {
     const h = await makeHarness();
-    mkdirSync(h.importsDir, { recursive: true });
-    writeFileSync(join(h.importsDir, "batch.txt"), "carol,pw-c\n");
-    const res = await post(h, { file: "batch.txt" });
+    const filePath = join(h.dir, "elsewhere.txt");
+    writeFileSync(filePath, "carol,pw-c\n");
+    const res = await post(h, { path: filePath });
     expect(res.status).toBe(201);
     expect((await h.snapshot()).users.has("carol")).toBe(true);
+    expect(
+      h.logs.some((log) => log.level === "info" && String(log.message).includes(filePath)),
+    ).toBe(true);
   });
 
-  it("rejects missing files, non-txt names and traversal attempts with 404", async () => {
+  it("rejects relative paths, non-txt names and missing files with 404", async () => {
     const h = await makeHarness();
-    for (const name of ["missing.txt", "../users.yaml", "users.yaml", "sub/dir.txt"]) {
-      const res = await post(h, { file: name });
+    const cases = ["", "team.txt", "sub/dir.txt", h.usersFile, join(h.dir, "missing.txt")];
+    for (const value of cases) {
+      const res = await post(h, { path: value });
       expect(res.status).toBe(404);
       expect(JSON.parse(res.body)).toEqual({ error: "import_file_not_found" });
     }
@@ -179,10 +158,26 @@ describe("POST /auth/users/import {file}", () => {
 
   it("rejects files beyond the size cap with 413", async () => {
     const h = await makeHarness();
-    mkdirSync(h.importsDir, { recursive: true });
-    writeFileSync(join(h.importsDir, "huge.txt"), "x".repeat(256 * 1024 + 1));
-    const res = await post(h, { file: "huge.txt" });
+    const huge = join(h.dir, "huge.txt");
+    writeFileSync(huge, "x".repeat(256 * 1024 + 1));
+    const res = await post(h, { path: huge });
     expect(res.status).toBe(413);
     expect(JSON.parse(res.body)).toEqual({ error: "import_file_too_large" });
+  });
+
+  it("rejects combined sources with 400 invalid_field", async () => {
+    const h = await makeHarness();
+    expect(JSON.parse((await post(h, { text: "a,b", path: "/x.txt" })).body)).toEqual({
+      error: "invalid_field",
+    });
+  });
+
+  it("rejects non-admin sessions with 403", async () => {
+    const h = await makeHarness();
+    const filePath = join(h.dir, "elsewhere.txt");
+    writeFileSync(filePath, "carol,pw-c\n");
+    const res = await post(h, { path: filePath }, await h.cookieFor("bob"));
+    expect(res.status).toBe(403);
+    expect((await h.snapshot()).users.has("carol")).toBe(false);
   });
 });

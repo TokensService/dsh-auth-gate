@@ -69,9 +69,12 @@ codebase. Solid engineering worth building on.
   after upgrading, grant the role once per admin or the page's mutations all
   answer 403. (Token mode has no users, so the page shows an "unavailable"
   notice there.) The page also **batch-imports users from a txt file** (one
-  `username,password` per line): pick a local file from your machine, or drop
-  the file into the server's `imports/` directory next to `users.yaml` and
-  pick it there - both flows validate every line and write all-or-nothing.
+  `username,password` per line): pick a local file from your machine, or enter
+  the absolute path of a `.txt` anywhere on the server - both flows validate
+  every line and write all-or-nothing. The page also hosts a **login timeout
+  setting**: an admin can change how long sessions stay signed in (persisted
+  in `settings.yaml` next to `users.yaml`); the change applies to new sign-ins
+  only - issued sessions keep their original expiry.
 
 ## Quick start
 
@@ -127,13 +130,31 @@ and the username line read `GET /auth/status`, which reports the current session
 as JSON:
 
 ```json
-{ "authenticated": true, "username": "alice", "logoutOrder": 1000 }
+{
+  "authenticated": true,
+  "username": "alice",
+  "logoutOrder": 1000,
+  "expiresAt": 1789722000000,
+  "serverTime": 1789721940000
+}
 ```
 
 `username` is the session subject (the login name in password mode); it is
 `null` when there is no valid session, and always `null` in token mode, where
-the shared secret has no per-user identity. Any page inside dsh web can fetch
-this endpoint to display the current user.
+the shared secret has no per-user identity. `expiresAt` is the finite session's
+absolute expiry time in epoch milliseconds, or `null` for a non-expiring or
+unauthenticated session. `serverTime` is the server's epoch milliseconds for
+calculating the remaining duration without trusting the browser clock. Any page
+inside dsh web can fetch this endpoint to display the current user.
+
+The client bundle also runs a background session watcher. It probes
+`/auth/status` immediately, derives a relative timer from `expiresAt` and
+`serverTime`, and keeps the 30-second plus focus/visibility probes as a
+revocation fallback.
+Once the session expires (or is revoked from another tab), the page redirects
+to the login screen instead of leaving you on a stale signed-in view.
+Transient probe failures (server restarts, network hiccups) do not trigger a
+redirect or cancel an already armed expiry timer.
 
 ## Configuration
 
@@ -156,7 +177,7 @@ in `deploy/cordis.patch.yml`). The override targets the mounted row by id
 | -------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mode`         | `"token"`          | `"password"` = username/password login; `"token"` = one shared secret                                                                                                                                                                               |
 | `totp`         | `"off"`            | Password mode only. `"optional"`: users with a TOTP secret sign in with password + code; `"required"`: all users must have a secret (users without one get the uniform 401 at the password stage, same body as a wrong password — anti-enumeration) |
-| `sessionTtl`   | `604800`           | How long a login lasts (seconds) before you must sign in again                                                                                                                                                                                      |
+| `sessionTtl`   | `0`                | Login lifetime in seconds. `0` means never expires; a positive value gives newly issued sessions a fixed lifetime                                                                                                                                   |
 | `cookieName`   | `dsh_auth`         | Name of the session cookie (rarely needs changing)                                                                                                                                                                                                  |
 | `tokenRef`     | `"DSH_AUTH_TOKEN"` | Token mode only: which environment variable holds the shared secret                                                                                                                                                                                 |
 | `cookieSecure` | `true`             | Set to `false` only if you are testing over plain http                                                                                                                                                                                              |

@@ -92,12 +92,6 @@ async function readErrorCode(res: Response): Promise<string> {
   return typeof body.error === "string" ? body.error : "";
 }
 
-/** 服务端导入目录里的候选文件（`imports/*.txt`）。 */
-export interface ServerImportFile {
-  name: string;
-  size: number;
-}
-
 /** 批量导入的单行失败明细（host ImportFailure 镜像）。 */
 export interface ImportFailure {
   line: number;
@@ -113,30 +107,14 @@ export interface ImportResult {
   failures?: ImportFailure[];
 }
 
-export type ServerFilesResult =
-  { ok: true; files: ServerImportFile[] } | { ok: false; status: number; code: string };
-
-/** GET /auth/users/import：服务端导入目录（imports/）里的 txt 列表。 */
-export async function listServerImportFiles(): Promise<ServerFilesResult> {
-  try {
-    const res = await fetch("/auth/users/import");
-    if (!res.ok) return { ok: false, status: res.status, code: await readErrorCode(res) };
-    const body = (await res.json()) as { files?: unknown };
-    const files = Array.isArray(body.files) ? (body.files as ServerImportFile[]) : [];
-    return { ok: true, files };
-  } catch {
-    return { ok: false, status: 0, code: "network" };
-  }
-}
-
 /** POST 导入：本地文件原文（{text}）。 */
 export function importUsersText(text: string): Promise<ImportResult> {
   return importMutate({ text });
 }
 
-/** POST 导入：服务端 imports/ 目录内文件（{file}）。 */
-export function importUsersServerFile(name: string): Promise<ImportResult> {
-  return importMutate({ file: name });
+/** POST 导入：服务器上 `.txt` 的绝对路径（{path}，D15）。 */
+export function importUsersServerPath(path: string): Promise<ImportResult> {
+  return importMutate({ path });
 }
 
 async function importMutate(payload: Record<string, unknown>): Promise<ImportResult> {
@@ -159,6 +137,58 @@ async function importMutate(payload: Record<string, unknown>): Promise<ImportRes
     if (typeof body.created === "number") result.created = body.created;
     if (Array.isArray(body.failures)) result.failures = body.failures as ImportFailure[];
     return result;
+  } catch {
+    return { ok: false, status: 0, code: "network" };
+  }
+}
+
+/** GET /auth/settings 的结果（host session-settings-endpoints 的契约镜像）。 */
+export interface SessionSettingsResult {
+  ok: boolean;
+  status: number;
+  code: string;
+  /** 生效中的会话 TTL（秒）。 */
+  sessionTtl?: number;
+  /** 插件配置的默认 TTL（秒；settings.yaml 未设置时生效值即它）。 */
+  defaultTtl?: number;
+}
+
+/** GET /auth/settings；404 = token 模式（端点未注册，落 /auth 兜底）。 */
+export async function getSessionSettings(): Promise<SessionSettingsResult> {
+  try {
+    const res = await fetch("/auth/settings");
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: unknown;
+      sessionTtl?: unknown;
+      defaultTtl?: unknown;
+    };
+    const result: SessionSettingsResult = {
+      ok: res.ok,
+      status: res.status,
+      code: typeof body.error === "string" ? body.error : "",
+    };
+    if (typeof body.sessionTtl === "number") result.sessionTtl = body.sessionTtl;
+    if (typeof body.defaultTtl === "number") result.defaultTtl = body.defaultTtl;
+    return result;
+  } catch {
+    return { ok: false, status: 0, code: "network" };
+  }
+}
+
+/** PATCH /auth/settings {sessionTtl}（admin 权限由服务端裁定，UI 降级只是镜像）。 */
+export async function updateSessionTtl(sessionTtl: number): Promise<MutationResult> {
+  try {
+    const res = await fetch("/auth/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionTtl }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    return {
+      ok: res.ok,
+      status: res.status,
+      code: typeof body.error === "string" ? body.error : "",
+    };
   } catch {
     return { ok: false, status: 0, code: "network" };
   }

@@ -6,7 +6,7 @@ import {
   loginPageHtml,
 } from "../../shared/index.js";
 import { AUTH_PATH_PREFIX, type HttpHandler } from "../../gate/index.js";
-import { buildSetCookie, type SessionStore } from "../../session/index.js";
+import { buildSessionCookie, buildSetCookie, type SessionStore } from "../../session/index.js";
 
 export interface AuthEndpointsDeps {
   /** 注册路由（index.ts 传入包装后的 server.register；被守卫包装但被 gate 白名单放行）。 */
@@ -118,7 +118,7 @@ async function loginAttempt(
   res.setHeader("cache-control", "no-store");
   res.setHeader(
     "set-cookie",
-    buildSetCookie(deps.cookieName, sessionToken, deps.sessionTtl, deps.cookieSecure),
+    buildSessionCookie(deps.cookieName, sessionToken, deps.sessionTtl, deps.cookieSecure),
   );
   res.writeHead(302, { location: next });
   res.end();
@@ -158,7 +158,9 @@ async function logout(
 
 /**
  * GET /auth/status：只认 cookie（M5，Bearer 不参与）。token 模式无用户身份（会话
- * subject 恒为审计占位 "token"），`username` 恒 null，与 password 模式响应同形。
+ * subject 恒为审计占位 "token"），`username` 恒 null；`expiresAt` 为有限会话的
+ * epoch 毫秒，永不过期或未登录为 null；`serverTime` 让 client 不依赖本机时钟即可
+ * 计算剩余时长。响应与 password 模式同形。
  */
 function handleStatus(deps: AuthEndpointsDeps, req: IncomingMessage, res: ServerResponse): void {
   if (req.method !== "GET") {
@@ -167,14 +169,21 @@ function handleStatus(deps: AuthEndpointsDeps, req: IncomingMessage, res: Server
   }
   const store = deps.sessions();
   const token = parseCookieHeader(req.headers.cookie, deps.cookieName);
-  const authenticated =
-    store !== undefined &&
-    token !== undefined &&
-    token !== "" &&
-    store.getByToken(token) !== undefined;
+  const session =
+    store !== undefined && token !== undefined && token !== ""
+      ? store.getByToken(token)
+      : undefined;
   res.setHeader("cache-control", "no-store");
   res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify({ authenticated, username: null, logoutOrder: deps.logoutOrder }));
+  res.end(
+    JSON.stringify({
+      authenticated: session !== undefined,
+      username: null,
+      logoutOrder: deps.logoutOrder,
+      expiresAt: session?.expiresAt === 0 || session === undefined ? null : session.expiresAt,
+      serverTime: Date.now(),
+    }),
+  );
 }
 
 function queryOf(req: IncomingMessage): URLSearchParams {

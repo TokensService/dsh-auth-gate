@@ -1,5 +1,11 @@
 # txt batch user import: local/server dual mode with a fixed imports/ sandbox (2026-09-14)
 
+> Amended (2026-09-14, D15): both the rejection of free-form server paths and the
+> fixed imports/ sandbox were revisited in
+> [Batch import switches to arbitrary absolute server paths](2026-09-14-server-path-import.en.md) -
+> once the owner accepted admins reading any `.txt`, `{path}` became the only
+> server-side source.
+
 ## Decision
 
 The user management page gains batch import: `POST /auth/users/import` accepts

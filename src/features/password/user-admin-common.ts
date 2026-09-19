@@ -33,7 +33,9 @@ export type UserAdminErrorCode =
   | "no_entries"
   | "too_many_entries"
   | "import_file_not_found"
-  | "import_file_too_large";
+  | "import_file_too_large"
+  | "invalid_ttl"
+  | "settings_store_unavailable";
 
 export interface UserAdminDeps {
   /** 注册路由（index.ts 传入包装后的 server.register；/auth 白名单放行，端点自校验会话）。 */

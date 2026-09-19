@@ -18,6 +18,24 @@ export function buildSetCookie(
   return `${cookieName}=${token}; Max-Age=${maxAgeSeconds}; Path=/; HttpOnly; ${secure ? "Secure; " : ""}SameSite=Lax`;
 }
 
+/** 浏览器持久 Cookie 的最大可移植秒数（有符号 32 位上限，约 68 年）。 */
+export const PERMANENT_COOKIE_MAX_AGE = 2_147_483_647;
+
+/** 会话 Cookie：TTL 0 表示应用层永不过期，Cookie 使用最大可移植 Max-Age。 */
+export function buildSessionCookie(
+  cookieName: string,
+  token: string,
+  ttlSeconds: number,
+  secure = true,
+): string {
+  return buildSetCookie(
+    cookieName,
+    token,
+    ttlSeconds === 0 ? PERMANENT_COOKIE_MAX_AGE : ttlSeconds,
+    secure,
+  );
+}
+
 /** 会话 token 的落盘键：sha256 hex 小写（64 字符）；介质上永不出现原始 token。 */
 export function digestToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -68,7 +86,7 @@ export class SessionStore {
     const session: Session = {
       subject,
       createdAt: now,
-      expiresAt: now + ttlMs,
+      expiresAt: ttlMs === 0 ? 0 : now + ttlMs,
       revoked: false,
     };
     await this.table.put(digestToken(token), session);
@@ -78,7 +96,7 @@ export class SessionStore {
   /** 同步内存读 + 校验；有效则返回行（不修改），否则 undefined。 */
   getByToken(token: string): Session | undefined {
     const row = this.table.get(digestToken(token));
-    if (row === undefined || row.revoked || row.expiresAt <= Date.now()) {
+    if (row === undefined || row.revoked || (row.expiresAt !== 0 && row.expiresAt <= Date.now())) {
       return undefined;
     }
     return row;
@@ -94,7 +112,7 @@ export class SessionStore {
   async pruneExpired(now: number = Date.now()): Promise<number> {
     let count = 0;
     for (const [key, row] of this.table.entries()) {
-      if (row.expiresAt <= now) {
+      if (row.expiresAt !== 0 && row.expiresAt <= now) {
         await this.table.delete(key);
         count += 1;
       }

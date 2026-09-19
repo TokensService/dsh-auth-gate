@@ -4,7 +4,8 @@ import { type SessionStore } from "../../session/index.js";
 export interface IssueSessionDeps {
     cookieName: string;
     cookieSecure: boolean;
-    sessionTtl: number;
+    /** 会话 TTL（秒）解析器：每次签发现取（settings.yaml 运行期可改，D16）。 */
+    sessionTtl: () => Promise<number>;
     /** 可选：dsh launch-token 桥（0.1.2-alpha+）。返回相对 `/?token=` 或 undefined。 */
     launchTokenBridge?: () => Promise<string | undefined>;
     logger: {

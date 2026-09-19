@@ -9,7 +9,7 @@ export declare const inject: readonly ["webServer"];
 export interface AuthConfig {
     /** 认证流：token（M2）/ password（M3）。 */
     mode: "token" | "password";
-    /** 会话 TTL（秒）。 */
+    /** 会话 TTL（秒）；0 = 永不过期。 */
     sessionTtl: number;
     /** 会话 cookie 名。 */
     cookieName: string;

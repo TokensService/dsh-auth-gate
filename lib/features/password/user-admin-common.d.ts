@@ -3,7 +3,7 @@ import { type UserRecord, type UsersLoadResult, type UsersSnapshot } from "../..
 import type { HttpHandler } from "../../gate/index.js";
 import type { SessionStore } from "../../session/index.js";
 /** 管理 API 的稳定错误码（client 按码本地化，不依赖英文文案）。 */
-export type UserAdminErrorCode = "unauthorized" | "forbidden" | "store_unavailable" | "user_store_unavailable" | "bad_json" | "unsupported_media_type" | "body_too_large" | "invalid_username" | "empty_password" | "invalid_field" | "nothing_to_update" | "duplicate" | "not_found" | "self_target" | "last_enabled" | "totp_exists" | "invalid_entry" | "no_entries" | "too_many_entries" | "import_file_not_found" | "import_file_too_large";
+export type UserAdminErrorCode = "unauthorized" | "forbidden" | "store_unavailable" | "user_store_unavailable" | "bad_json" | "unsupported_media_type" | "body_too_large" | "invalid_username" | "empty_password" | "invalid_field" | "nothing_to_update" | "duplicate" | "not_found" | "self_target" | "last_enabled" | "totp_exists" | "invalid_entry" | "no_entries" | "too_many_entries" | "import_file_not_found" | "import_file_too_large" | "invalid_ttl" | "settings_store_unavailable";
 export interface UserAdminDeps {
     /** 注册路由（index.ts 传入包装后的 server.register；/auth 白名单放行，端点自校验会话）。 */
     register(route: {

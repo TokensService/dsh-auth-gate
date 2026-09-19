@@ -5,6 +5,7 @@ export * from "./password.js";
 export * from "./password-endpoints.js";
 export * from "./password-gate.js";
 export * from "./password-login.js";
+export * from "./session-settings-endpoints.js";
 export * from "./user-admin-endpoints.js";
 export * from "./user-admin-import.js";
 //# sourceMappingURL=index.d.ts.map

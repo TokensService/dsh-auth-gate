@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { compareNames, USERNAME_RE } from "../../shared/index.js";
+import { USERNAME_RE } from "../../shared/index.js";
 import { hashPassword } from "./password.js";
 import {
   readJsonOrRespond,
@@ -26,9 +26,6 @@ export const IMPORT_MAX_ENTRIES = 100;
 /** 响应里最多带回的失败明细条数。 */
 const MAX_FAILURES_REPORTED = 50;
 
-/** 服务端导入文件名白名单：basename 形态 + `.txt`（无路径分隔符 → 不可目录遍历）。 */
-const SERVER_FILE_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,125}\.txt$/;
-
 /** 单行校验失败明细（line 为 1 起始行号，client 按 code 本地化）。 */
 export interface ImportFailure {
   line: number;
@@ -43,9 +40,9 @@ interface ImportEntry {
 }
 
 /**
- * 注册 exact `/auth/users/import`（D14：txt 批量导入）。GET 列出服务端导入目录
- * （`<usersDir>/imports/`）里的 `.txt` 文件；POST `{text}`（本地文件原文）或
- * `{file}`（服务端目录内文件名）二选一，全量校验后原子写入（all-or-nothing）。
+ * 注册 exact `/auth/users/import`（D14：txt 批量导入；D15 改任意绝对路径）。
+ * 仅 POST，二选一：`{text}`（本地文件原文）、`{path}`（服务器上 `.txt` 的
+ * 绝对路径），全量校验后原子写入（all-or-nothing）。
  * 仅 admin；非 admin → 403 forbidden。
  */
 export function registerUserImportEndpoints(deps: UserAdminDeps): () => void {
@@ -61,48 +58,13 @@ function dispatch(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> | void {
-  if (req.method === "GET") return handleListFiles(deps, req, res);
   if (req.method === "POST") return handleImport(deps, req, res);
   res.setHeader("cache-control", "no-store");
-  res.writeHead(405, { allow: "GET, POST", "content-type": "text/plain" });
+  res.writeHead(405, { allow: "POST", "content-type": "text/plain" });
   res.end("method not allowed");
 }
 
-/** GET /auth/users/import：列出服务端导入目录的候选 txt（name+size，字典序）。 */
-async function handleListFiles(
-  deps: UserAdminDeps,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  const admin = await requireAdmin(deps, req, res);
-  if (admin === undefined) return;
-  const dir = importsDirOf(deps.usersPath);
-  let dirents;
-  try {
-    dirents = await fs.readdir(dir, { withFileTypes: true });
-  } catch (error) {
-    if (isEnoent(error)) {
-      sendJson(res, 200, { files: [] });
-      return;
-    }
-    deps.logger.error(`imports dir unreadable (${dir}): ${errorMessage(error)}`);
-    sendCode(res, 503, "user_store_unavailable");
-    return;
-  }
-  const files: { name: string; size: number }[] = [];
-  for (const dirent of dirents) {
-    if (!dirent.isFile() || !SERVER_FILE_RE.test(dirent.name)) continue;
-    try {
-      files.push({ name: dirent.name, size: (await fs.stat(path.join(dir, dirent.name))).size });
-    } catch {
-      // 列出与 stat 之间的删除竞争：跳过该文件即可。
-    }
-  }
-  files.sort((a, b) => compareNames(a.name, b.name));
-  sendJson(res, 200, { files });
-}
-
-/** POST /auth/users/import {text} | {file}：解析 → 全量校验 → 原子写入。 */
+/** POST /auth/users/import {text} | {path}：解析 → 全量校验 → 原子写入。 */
 async function handleImport(
   deps: UserAdminDeps,
   req: IncomingMessage,
@@ -112,17 +74,9 @@ async function handleImport(
   if (admin === undefined) return;
   const body = await readJsonOrRespond(req, res, IMPORT_BODY_LIMIT);
   if (body === undefined) return;
-  const text = typeof body["text"] === "string" ? body["text"] : undefined;
-  const file = typeof body["file"] === "string" ? body["file"] : undefined;
-  if ((text === undefined) === (file === undefined)) return sendCode(res, 400, "invalid_field");
-  let content: string | undefined;
-  if (text !== undefined) {
-    content = text;
-  } else {
-    content = await readServerImportFile(deps, res, file ?? "");
-  }
-  if (content === undefined) return;
-  const { entries, failures } = collectEntries(content, admin.snapshot);
+  const source = await resolveImportContent(deps, res, body);
+  if (source === undefined) return;
+  const { entries, failures } = collectEntries(source.content, admin.snapshot);
   if (entries.length > IMPORT_MAX_ENTRIES) return sendCode(res, 400, "too_many_entries");
   if (failures.length > 0) {
     sendJson(res, 400, {
@@ -140,9 +94,7 @@ async function handleImport(
     });
   });
   if (!(await writeUsersOr503(deps, res, admin.snapshot))) return;
-  deps.logger.info(
-    `imported ${entries.length} users via /auth/users/import (${text === undefined ? `server file ${file}` : "inline text"})`,
-  );
+  deps.logger.info(`imported ${entries.length} users via /auth/users/import (${source.label})`);
   sendJson(res, 201, {
     created: entries.length,
     users: entries.map((entry) =>
@@ -151,17 +103,60 @@ async function handleImport(
   });
 }
 
-/** 读取服务端导入目录内的 txt；失败已写响应（404/413/503）并返回 undefined。 */
-async function readServerImportFile(
+interface ImportSource {
+  content: string;
+  /** 审计日志里的来源描述（inline text / server path <path>）。 */
+  label: string;
+}
+
+/**
+ * 从请求体取唯一来源（text/path 二选一，否则 400 invalid_field）并读到原文；
+ * 失败已写响应（400/404/413/503）并返回 undefined。
+ */
+async function resolveImportContent(
   deps: UserAdminDeps,
   res: ServerResponse,
-  name: string,
+  body: Record<string, unknown>,
+): Promise<ImportSource | undefined> {
+  const text = typeof body["text"] === "string" ? body["text"] : undefined;
+  const serverPath = typeof body["path"] === "string" ? body["path"] : undefined;
+  if ((text === undefined) === (serverPath === undefined)) {
+    sendCode(res, 400, "invalid_field");
+    return undefined;
+  }
+  if (text !== undefined) return { content: text, label: "inline text" };
+  const content = await readServerImportPath(deps, res, serverPath ?? "");
+  return content === undefined ? undefined : { content, label: `server path ${serverPath ?? ""}` };
+}
+
+/**
+ * 读取服务器上任意绝对路径的 txt（D15）：非绝对路径、含 NUL、非 `.txt` 后缀
+ * 一律 404（不提供「哪种路径合法」的探测面）。
+ */
+async function readServerImportPath(
+  deps: UserAdminDeps,
+  res: ServerResponse,
+  rawPath: string,
 ): Promise<string | undefined> {
-  if (!SERVER_FILE_RE.test(name)) {
+  const trimmed = rawPath.trim();
+  const invalid =
+    trimmed === "" ||
+    trimmed.includes("\0") ||
+    !path.isAbsolute(trimmed) ||
+    !trimmed.endsWith(".txt");
+  if (invalid) {
     sendCode(res, 404, "import_file_not_found");
     return undefined;
   }
-  const filePath = path.join(importsDirOf(deps.usersPath), name);
+  return readImportFile(deps, res, trimmed);
+}
+
+/** stat + 读全文（服务端文件来源共用）；失败已写响应（404/413/503）。 */
+async function readImportFile(
+  deps: UserAdminDeps,
+  res: ServerResponse,
+  filePath: string,
+): Promise<string | undefined> {
   try {
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) {
@@ -231,11 +226,6 @@ export function parseImportText(text: string): {
     entries.push({ line, username, password });
   });
   return { entries, failures };
-}
-
-/** 服务端导入目录：与 users.yaml 同级的 `imports/`（固定沙箱，D14）。 */
-function importsDirOf(usersPath: string): string {
-  return path.join(path.dirname(usersPath), "imports");
 }
 
 function isEnoent(error: unknown): boolean {

@@ -62,6 +62,13 @@ function makeFetchMock(users: AdminUser[], mutation?: { status: number; body: un
     const parsed =
       init?.body === undefined ? undefined : (JSON.parse(init.body) as Record<string, unknown>);
     calls.push({ url, method, ...(parsed === undefined ? {} : { body: parsed }) });
+    if (url === "/auth/settings") {
+      const body =
+        method === "PATCH"
+          ? { sessionTtl: parsed?.["sessionTtl"], defaultTtl: 604800 }
+          : { sessionTtl: 604800, defaultTtl: 604800 };
+      return Promise.resolve(jsonResponse(200, body));
+    }
     const body = method === "GET" ? { users } : (mutation?.body ?? { user: BOB });
     const status = method === "GET" ? 200 : (mutation?.status ?? 200);
     return Promise.resolve(jsonResponse(status, body));
@@ -185,7 +192,7 @@ describe("SettingsUsersSection row actions", () => {
     const { root, container } = await renderSection();
     await click(buttonByText(rowOf(container, "bob"), "Change password"));
     await typeInto(container.querySelector("input[type='password']")!, "new-pw");
-    await click(buttonByText(container, "Save"));
+    await click(buttonByText(rowOf(container, "bob"), "Save"));
     expect(
       calls.some(
         (c) =>

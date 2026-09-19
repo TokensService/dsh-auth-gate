@@ -201,6 +201,26 @@ describe("GET /auth/login", () => {
   });
 });
 
+it("issues a persistent token session when sessionTtl is zero", async () => {
+  const harness = makeHarness({ sessionTtl: 0 });
+  registerAuthEndpoints(harness.deps);
+  const res = makeRes();
+  await handlerOf(
+    harness,
+    "exact",
+    "/auth/login",
+  )(
+    makeReq({
+      method: "POST",
+      contentType: "application/x-www-form-urlencoded",
+      body: Buffer.from("token=good-token"),
+    }),
+    res.res,
+  );
+  expect([...harness.table.entries()][0]?.[1].expiresAt).toBe(0);
+  expect(res.headers["set-cookie"]).toContain("Max-Age=2147483647");
+});
+
 describe("POST /auth/logout", () => {
   it("revokes the session, clears the cookie and redirects via query next", async () => {
     const harness = makeHarness();

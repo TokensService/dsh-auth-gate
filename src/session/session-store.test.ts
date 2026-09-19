@@ -1,6 +1,12 @@
 import type { KvTable } from "@deepseek-ai/dsh-storage-domain";
 import { describe, expect, it } from "vitest";
-import { buildSetCookie, digestToken, SessionStore, type Session } from "./session-store.js";
+import {
+  buildSessionCookie,
+  buildSetCookie,
+  digestToken,
+  SessionStore,
+  type Session,
+} from "./session-store.js";
 
 class MemTable implements KvTable<string, Session> {
   private readonly map = new Map<string, Session>();
@@ -76,6 +82,20 @@ describe("SessionStore", () => {
     expect(store.getByToken(issued.token)).toBeUndefined();
   });
 
+  it("keeps a zero-TTL session valid until it is explicitly revoked", async () => {
+    const table = new MemTable();
+    const store = new SessionStore(table);
+    const issued = await store.create("permanent", 0);
+
+    expect(issued.session.expiresAt).toBe(0);
+    expect(store.getByToken(issued.token)?.subject).toBe("permanent");
+    expect(await store.pruneExpired(Number.MAX_SAFE_INTEGER)).toBe(0);
+    expect(store.getByToken(issued.token)?.subject).toBe("permanent");
+
+    await store.revokeByToken(issued.token);
+    expect(store.getByToken(issued.token)).toBeUndefined();
+  });
+
   it("revokes by deleting the row", async () => {
     const table = new MemTable();
     const store = new SessionStore(table);
@@ -118,6 +138,20 @@ describe("buildSetCookie", () => {
   it("keeps the M1 output when the 4th argument is omitted", () => {
     expect(buildSetCookie("dsh_auth", "tok", 604800)).toBe(
       buildSetCookie("dsh_auth", "tok", 604800, true),
+    );
+  });
+});
+
+describe("buildSessionCookie", () => {
+  it("uses the maximum portable Max-Age for a never-expiring session", () => {
+    expect(buildSessionCookie("dsh_auth", "tok", 0)).toBe(
+      "dsh_auth=tok; Max-Age=2147483647; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+  });
+
+  it("keeps a finite session's configured Max-Age", () => {
+    expect(buildSessionCookie("dsh_auth", "tok", 3600, false)).toBe(
+      "dsh_auth=tok; Max-Age=3600; Path=/; HttpOnly; SameSite=Lax",
     );
   });
 });

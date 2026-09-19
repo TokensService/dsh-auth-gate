@@ -22,6 +22,6 @@
     cookieSecure: true
     # 以下均为可选，默认值见 README：
     # usersFile: ""          # 默认 $DSH_HOME/auth/users.yaml
-    # sessionTtl: 604800     # 秒，自创建起固定过期
+    # sessionTtl: 0          # 0 = 永不过期；正数 = 自创建起固定过期秒数
     # cookieName: dsh_auth
     # logoutOrder: 1000      # 退出按钮在设置→通用设置的槽位顺序，越大越靠底

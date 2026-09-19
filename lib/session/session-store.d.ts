@@ -6,6 +6,10 @@ export declare const COOKIE_FLAGS = "Path=/; HttpOnly; Secure; SameSite=Lax";
  * `secure=false` 时省略 `; Secure`（http 测试/开发，M7）。
  */
 export declare function buildSetCookie(cookieName: string, token: string, maxAgeSeconds: number, secure?: boolean): string;
+/** 浏览器持久 Cookie 的最大可移植秒数（有符号 32 位上限，约 68 年）。 */
+export declare const PERMANENT_COOKIE_MAX_AGE = 2147483647;
+/** 会话 Cookie：TTL 0 表示应用层永不过期，Cookie 使用最大可移植 Max-Age。 */
+export declare function buildSessionCookie(cookieName: string, token: string, ttlSeconds: number, secure?: boolean): string;
 /** 会话 token 的落盘键：sha256 hex 小写（64 字符）；介质上永不出现原始 token。 */
 export declare function digestToken(token: string): string;
 export interface Session {

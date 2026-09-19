@@ -17,9 +17,9 @@ interface ImportEntry {
     password: string;
 }
 /**
- * 注册 exact `/auth/users/import`（D14：txt 批量导入）。GET 列出服务端导入目录
- * （`<usersDir>/imports/`）里的 `.txt` 文件；POST `{text}`（本地文件原文）或
- * `{file}`（服务端目录内文件名）二选一，全量校验后原子写入（all-or-nothing）。
+ * 注册 exact `/auth/users/import`（D14：txt 批量导入；D15 改任意绝对路径）。
+ * 仅 POST，二选一：`{text}`（本地文件原文）、`{path}`（服务器上 `.txt` 的
+ * 绝对路径），全量校验后原子写入（all-or-nothing）。
  * 仅 admin；非 admin → 403 forbidden。
  */
 export declare function registerUserImportEndpoints(deps: UserAdminDeps): () => void;
