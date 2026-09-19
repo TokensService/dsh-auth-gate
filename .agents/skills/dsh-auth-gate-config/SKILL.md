@@ -101,7 +101,7 @@ Run on an isolated test instance. / 隔离测试实例上验证：
 - Login page: `GET /auth/login` → 200 with a username/password form; unauthenticated
   API calls always get 401, HTML requests get 302 to login. / 登录页：
   GET /auth/login → 200 含 username/password 表单；API 未认证一律 401、HTML 302 到登录页。
-- `curl http://127.0.0.1:<port>/auth/status` → `{"authenticated":false,"username":null,"logoutOrder":1000,"expiresAt":null}`
+- `curl http://127.0.0.1:<port>/auth/status` → `{"authenticated":false,"username":null,"logoutOrder":1000,"expiresAt":null,"serverTime":<epoch-ms>}`
   (status only accepts cookies; Bearer does not participate). / `curl .../auth/status`
   返回该 JSON（status 只认 cookie，Bearer 不参与）。
 - After login, Settings > General: the last child of

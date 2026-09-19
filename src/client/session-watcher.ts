@@ -3,8 +3,8 @@
  * 导航，而服务端会话过期后守卫只能拒绝「新」请求（页面导航 302 登录页、
  * XHR 401、WS 拒握手），已加载的界面不会自己退回登录页，表现为登录超时后
  * 仍停留在登录后界面。本模块启动后立即探测 /auth/status；有限会话按服务端
- * expiresAt 安排本地绝对到期定时器，并以周期 + 窗口焦点/可见性事件作为吊销
- * 兜底。拿到明确的 authenticated:false 或到达已确认的 expiresAt 时整页跳转
+ * expiresAt - serverTime 安排本地相对到期定时器，并以周期 + 窗口焦点/可见性
+ * 事件作为吊销兜底。拿到明确的 authenticated:false 或到达已确认的 expiresAt 时整页跳转
  * 登录页（next 回跳当前路径）。不确定的探测结果（网络错误、非 200、JSON 解析
  * 失败、字段缺失）一律不跳，也不取消已知期限，避免网络抖动误踢或延迟退出。
  */
@@ -18,8 +18,24 @@ export const SESSION_STATUS_URL = "/auth/status";
 /** 浏览器 setTimeout 的有符号 32 位上限；更远的期限分段重挂。 */
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
-function isFiniteExpiry(value: unknown): value is number {
+function isFiniteTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+interface SessionStatusBody {
+  authenticated?: unknown;
+  expiresAt?: unknown;
+  serverTime?: unknown;
+}
+
+async function fetchSessionStatus(): Promise<SessionStatusBody | undefined> {
+  try {
+    const res = await fetch(SESSION_STATUS_URL, { cache: "no-store" });
+    if (!res.ok) return undefined;
+    return (await res.json()) as SessionStatusBody;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -47,7 +63,8 @@ export interface SessionWatcherOptions {
 
 /**
  * 启动看门狗并返回 disposer（清定时器 + 摘事件监听，供 ctx.effect 级联卸载）。
- * 跳转最多发生一次：首次确认过期即停表摘监听，在途探针晚到的结果不再重复导航。
+ * 跳转最多发生一次：首次确认过期即停表摘监听。并发探针按请求启动顺序提交状态，
+ * 较旧的响应不能覆盖较新的确定结果。
  */
 export function startSessionWatcher(options: SessionWatcherOptions = {}): () => void {
   const intervalMs = options.intervalMs ?? SESSION_WATCH_INTERVAL_MS;
@@ -58,6 +75,8 @@ export function startSessionWatcher(options: SessionWatcherOptions = {}): () => 
     });
   let active = true;
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  let nextProbeId = 0;
+  let lastAppliedProbeId = 0;
 
   const cleanup = (): void => {
     clearInterval(timer);
@@ -73,46 +92,42 @@ export function startSessionWatcher(options: SessionWatcherOptions = {}): () => 
     navigate(loginRedirectUrl(window.location.pathname, window.location.search));
   };
 
-  const armExpiry = (expiresAt: number): void => {
+  const armExpiry = (remainingMs: number): void => {
     if (expiryTimer !== undefined) clearTimeout(expiryTimer);
-    const remaining = expiresAt - Date.now();
-    if (remaining <= 0) {
+    if (remainingMs <= 0) {
       redirect();
       return;
     }
-    expiryTimer = setTimeout(
-      () => {
-        if (!active) return;
-        if (expiresAt <= Date.now()) redirect();
-        else armExpiry(expiresAt);
-      },
-      Math.min(remaining, MAX_TIMER_DELAY_MS),
-    );
+    const delay = Math.min(remainingMs, MAX_TIMER_DELAY_MS);
+    expiryTimer = setTimeout(() => {
+      if (!active) return;
+      if (remainingMs <= delay) redirect();
+      else armExpiry(remainingMs - delay);
+    }, delay);
   };
 
   const probe = async (): Promise<void> => {
     if (!active) return;
-    let body: { authenticated?: unknown; expiresAt?: unknown };
-    try {
-      const res = await fetch(SESSION_STATUS_URL, { cache: "no-store" });
-      if (!res.ok) return;
-      body = (await res.json()) as { authenticated?: unknown; expiresAt?: unknown };
-    } catch {
-      return; // 网络 / 解析失败：状态不确定，保持现状等下一轮
-    }
-    if (!active) return;
+    const probeId = ++nextProbeId;
+    const requestStartedAt = performance.now();
+    const body = await fetchSessionStatus();
+    if (body === undefined) return; // 状态不确定：保持现状等下一轮
+    if (!active || probeId < lastAppliedProbeId) return;
     if (body.authenticated === false) {
+      lastAppliedProbeId = probeId;
       redirect();
       return;
     }
     if (body.authenticated !== true) return;
+    lastAppliedProbeId = probeId;
     if (body.expiresAt === null) {
       if (expiryTimer !== undefined) clearTimeout(expiryTimer);
       expiryTimer = undefined;
       return;
     }
-    if (isFiniteExpiry(body.expiresAt)) {
-      armExpiry(body.expiresAt);
+    if (isFiniteTimestamp(body.expiresAt) && isFiniteTimestamp(body.serverTime)) {
+      const responseAge = Math.max(0, performance.now() - requestStartedAt);
+      armExpiry(body.expiresAt - body.serverTime - responseAge);
     }
   };
 

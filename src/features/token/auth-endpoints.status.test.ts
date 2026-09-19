@@ -72,6 +72,13 @@ function makeRes(): FakeRes {
   return Object.assign(state, { res });
 }
 
+function statusWithoutServerTime(body: string): Record<string, unknown> {
+  const parsed = JSON.parse(body) as Record<string, unknown>;
+  const { serverTime, ...status } = parsed;
+  expect(typeof serverTime).toBe("number");
+  return status;
+}
+
 function makeReq(options: {
   method?: string;
   url?: string;
@@ -161,7 +168,7 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ cookie: `dsh_auth=${issued.token}` }), authed.res);
     expect(authed.status).toBe(200);
-    expect(JSON.parse(authed.body)).toEqual({
+    expect(statusWithoutServerTime(authed.body)).toEqual({
       authenticated: true,
       username: null,
       logoutOrder: 1000,
@@ -170,7 +177,7 @@ describe("GET /auth/status", () => {
 
     const anonymous = makeRes();
     await handlerOf(harness, "exact", "/auth/status")(makeReq({}), anonymous.res);
-    expect(JSON.parse(anonymous.body)).toEqual({
+    expect(statusWithoutServerTime(anonymous.body)).toEqual({
       authenticated: false,
       username: null,
       logoutOrder: 1000,
@@ -183,7 +190,7 @@ describe("GET /auth/status", () => {
       "exact",
       "/auth/status",
     )(makeReq({ authorization: "Bearer good-token" }), bearerOnly.res);
-    expect(JSON.parse(bearerOnly.body)).toEqual({
+    expect(statusWithoutServerTime(bearerOnly.body)).toEqual({
       authenticated: false,
       username: null,
       logoutOrder: 1000,
@@ -197,7 +204,7 @@ describe("GET /auth/status", () => {
     const res = makeRes();
     await handlerOf(harness, "exact", "/auth/status")(makeReq({}), res.res);
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({
+    expect(statusWithoutServerTime(res.body)).toEqual({
       authenticated: false,
       username: null,
       logoutOrder: 5000,
@@ -216,7 +223,7 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ cookie: `dsh_auth=${issued.token}` }), res.res);
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({
+    expect(statusWithoutServerTime(res.body)).toEqual({
       authenticated: true,
       username: null,
       logoutOrder: 1000,

@@ -159,7 +159,8 @@ async function logout(
 /**
  * GET /auth/status：只认 cookie（M5，Bearer 不参与）。token 模式无用户身份（会话
  * subject 恒为审计占位 "token"），`username` 恒 null；`expiresAt` 为有限会话的
- * epoch 毫秒，永不过期或未登录为 null。响应与 password 模式同形。
+ * epoch 毫秒，永不过期或未登录为 null；`serverTime` 让 client 不依赖本机时钟即可
+ * 计算剩余时长。响应与 password 模式同形。
  */
 function handleStatus(deps: AuthEndpointsDeps, req: IncomingMessage, res: ServerResponse): void {
   if (req.method !== "GET") {
@@ -180,6 +181,7 @@ function handleStatus(deps: AuthEndpointsDeps, req: IncomingMessage, res: Server
       username: null,
       logoutOrder: deps.logoutOrder,
       expiresAt: session?.expiresAt === 0 || session === undefined ? null : session.expiresAt,
+      serverTime: Date.now(),
     }),
   );
 }

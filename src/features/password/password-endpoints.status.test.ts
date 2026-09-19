@@ -73,6 +73,13 @@ function makeRes(): FakeRes {
   return Object.assign(state, { res });
 }
 
+function statusWithoutServerTime(body: string): Record<string, unknown> {
+  const parsed = JSON.parse(body) as Record<string, unknown>;
+  const { serverTime, ...status } = parsed;
+  expect(typeof serverTime).toBe("number");
+  return status;
+}
+
 function makeReq(options: {
   method?: string;
   url?: string;
@@ -173,7 +180,7 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ method: "GET", url: "/auth/status", cookie: `dsh_auth=${token}` }), res.res);
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({
+    expect(statusWithoutServerTime(res.body)).toEqual({
       authenticated: true,
       username: "alice",
       logoutOrder: 1000,
@@ -191,7 +198,7 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ method: "GET", url: "/auth/status" }), res.res);
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({
+    expect(statusWithoutServerTime(res.body)).toEqual({
       authenticated: false,
       username: null,
       logoutOrder: 777,
@@ -211,7 +218,7 @@ describe("GET /auth/status", () => {
       makeReq({ method: "GET", url: "/auth/status", authorization: "Bearer some-session-token" }),
       res.res,
     );
-    expect(JSON.parse(res.body)).toEqual({
+    expect(statusWithoutServerTime(res.body)).toEqual({
       authenticated: false,
       username: null,
       logoutOrder: 1000,
@@ -229,7 +236,7 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ method: "GET", url: "/auth/status", cookie: "dsh_auth=ghost" }), res.res);
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({
+    expect(statusWithoutServerTime(res.body)).toEqual({
       authenticated: false,
       username: null,
       logoutOrder: 1000,

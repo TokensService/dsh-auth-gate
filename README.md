@@ -134,7 +134,8 @@ as JSON:
   "authenticated": true,
   "username": "alice",
   "logoutOrder": 1000,
-  "expiresAt": 1789722000000
+  "expiresAt": 1789722000000,
+  "serverTime": 1789721940000
 }
 ```
 
@@ -142,12 +143,14 @@ as JSON:
 `null` when there is no valid session, and always `null` in token mode, where
 the shared secret has no per-user identity. `expiresAt` is the finite session's
 absolute expiry time in epoch milliseconds, or `null` for a non-expiring or
-unauthenticated session. Any page inside dsh web can fetch this endpoint to
-display the current user.
+unauthenticated session. `serverTime` is the server's epoch milliseconds for
+calculating the remaining duration without trusting the browser clock. Any page
+inside dsh web can fetch this endpoint to display the current user.
 
 The client bundle also runs a background session watcher. It probes
-`/auth/status` immediately, arms a local timer for a finite `expiresAt`, and
-keeps the 30-second plus focus/visibility probes as a revocation fallback.
+`/auth/status` immediately, derives a relative timer from `expiresAt` and
+`serverTime`, and keeps the 30-second plus focus/visibility probes as a
+revocation fallback.
 Once the session expires (or is revoked from another tab), the page redirects
 to the login screen instead of leaving you on a stale signed-in view.
 Transient probe failures (server restarts, network hiccups) do not trigger a

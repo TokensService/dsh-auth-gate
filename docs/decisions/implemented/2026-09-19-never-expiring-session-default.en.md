@@ -12,9 +12,12 @@ Finite timeouts remain supported. The settings API accepts `0` or an integer
 in [60, 31536000], and the User Management page offers an explicit "Never
 expires" choice alongside its whole-hour input. `/auth/status` reports the
 finite session's absolute expiry as epoch milliseconds in `expiresAt`, or
-`null` for a non-expiring or unauthenticated session. The client probes status
-immediately, arms a local timer for a finite expiry, and retains periodic,
-focus, and visibility probes for revocation and cross-tab changes.
+`null` for a non-expiring or unauthenticated session. It also reports
+`serverTime`, so the client derives a relative remaining duration without
+depending on the browser wall clock. The client probes status immediately,
+arms a local timer for a finite expiry, discards older responses that arrive
+after a newer conclusive response, and retains periodic, focus, and visibility
+probes for revocation and cross-tab changes.
 
 Existing `settings.yaml` values remain explicit policy and are not rewritten
 on upgrade. Any TTL change still affects newly issued sessions only.
@@ -52,7 +55,9 @@ The zero sentinel adds no storage migration because the persisted schema
 already accepts nonnegative timestamps. A large portable cookie lifetime
 keeps browser storage practical while the server remains authoritative; a
 browser may still clear or clamp persistent cookies according to its own
-policy. Exposing an absolute expiry lets the browser leave the stale SPA at
-the intended deadline without trusting a later network response. Periodic
-status probes remain useful for revocation, while transient probe failures do
-not cause false logout or cancel the already armed deadline.
+policy. Exposing an absolute expiry plus the server time lets the browser leave
+the stale SPA at the intended deadline without trusting its wall clock or a
+later network response. Response ordering prevents a slow older probe from
+replacing newer session state. Periodic status probes remain useful for
+revocation, while transient probe failures do not cause false logout or cancel
+the already armed deadline.
