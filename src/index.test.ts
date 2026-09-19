@@ -13,7 +13,7 @@ import { TokenGate } from "./features/token/index.js";
 function cfg(): AuthConfig {
   return {
     mode: "token",
-    sessionTtl: 604800,
+    sessionTtl: 0,
     cookieName: "dsh_auth",
     tokenRef: "DSH_AUTH_TOKEN",
     cookieSecure: true,

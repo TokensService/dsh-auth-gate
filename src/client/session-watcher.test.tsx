@@ -11,9 +11,17 @@ async function flushMicrotasks(): Promise<void> {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 }
 
-/** /auth/status 的正常响应（200 + authenticated 字段）。 */
-function statusResponse(authenticated: boolean): unknown {
-  return { ok: true, status: 200, json: () => Promise.resolve({ authenticated }) };
+/** /auth/status 的正常响应（200 + authenticated + 可选绝对过期时间）。 */
+function statusResponse(authenticated: boolean, expiresAt?: number | null): unknown {
+  return {
+    ok: true,
+    status: 200,
+    json: () =>
+      Promise.resolve({
+        authenticated,
+        ...(expiresAt === undefined ? {} : { expiresAt }),
+      }),
+  };
 }
 
 /** 临时覆写 document.visibilityState（jsdom 默认 visible；configurable 以便还原）。 */
@@ -79,6 +87,28 @@ describe("startSessionWatcher interval probing", () => {
     expect(w.navigate).not.toHaveBeenCalled();
   });
 
+  it("probes immediately and redirects at the server-provided expiry without another response", async () => {
+    const now = new Date("2026-09-19T00:00:00.000Z");
+    vi.setSystemTime(now);
+    w.fetchMock.mockResolvedValue(statusResponse(true, now.getTime() + 60_000));
+    w.start();
+    await flushMicrotasks();
+    expect(w.fetchMock).toHaveBeenCalledTimes(1);
+
+    w.fetchMock.mockRejectedValue(new Error("offline"));
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(w.navigate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(w.navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not arm an expiry redirect for a never-expiring session", async () => {
+    w.fetchMock.mockResolvedValue(statusResponse(true, null));
+    w.start();
+    await vi.advanceTimersByTimeAsync(SESSION_WATCH_INTERVAL_MS * 3);
+    expect(w.navigate).not.toHaveBeenCalled();
+  });
+
   it("redirects to the login page exactly once after the session expires", async () => {
     w.fetchMock.mockResolvedValue(statusResponse(false));
     w.start();
@@ -139,33 +169,37 @@ describe("startSessionWatcher focus and disposal", () => {
     w.start();
     window.dispatchEvent(new Event("focus"));
     await flushMicrotasks();
-    expect(w.fetchMock).toHaveBeenCalledTimes(1);
+    expect(w.fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(w.navigate).toHaveBeenCalledTimes(1);
   });
 
   it("probes when the tab becomes visible and skips while hidden", async () => {
     w.fetchMock.mockResolvedValue(statusResponse(true));
     w.start();
+    await flushMicrotasks();
     setVisibility("hidden");
     document.dispatchEvent(new Event("visibilitychange"));
     await flushMicrotasks();
-    expect(w.fetchMock).not.toHaveBeenCalled();
+    expect(w.fetchMock).toHaveBeenCalledTimes(1);
     setVisibility("visible");
     document.dispatchEvent(new Event("visibilitychange"));
     await flushMicrotasks();
-    expect(w.fetchMock).toHaveBeenCalledTimes(1);
+    expect(w.fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("stops probing after dispose", async () => {
-    w.fetchMock.mockResolvedValue(statusResponse(false));
+    let resolveStatus: ((value: unknown) => void) | undefined;
+    w.fetchMock.mockImplementation(() => new Promise((resolve) => (resolveStatus = resolve)));
     w.start();
     w.stop();
+    resolveStatus?.(statusResponse(false));
+    await flushMicrotasks();
     await vi.advanceTimersByTimeAsync(SESSION_WATCH_INTERVAL_MS * 2);
     window.dispatchEvent(new Event("focus"));
     setVisibility("visible");
     document.dispatchEvent(new Event("visibilitychange"));
     await flushMicrotasks();
-    expect(w.fetchMock).not.toHaveBeenCalled();
+    expect(w.fetchMock).toHaveBeenCalledTimes(1);
     expect(w.navigate).not.toHaveBeenCalled();
   });
 });

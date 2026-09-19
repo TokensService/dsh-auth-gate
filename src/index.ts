@@ -35,7 +35,7 @@ export const inject = ["webServer"] as const;
 export interface AuthConfig {
   /** 认证流：token（M2）/ password（M3）。 */
   mode: "token" | "password";
-  /** 会话 TTL（秒）。 */
+  /** 会话 TTL（秒）；0 = 永不过期。 */
   sessionTtl: number;
   /** 会话 cookie 名。 */
   cookieName: string;
@@ -60,7 +60,7 @@ export interface AuthConfig {
 
 export const Config: z<AuthConfig> = z.object({
   mode: z.union([z.const("token"), z.const("password")]).default("token"),
-  sessionTtl: z.natural().default(604800),
+  sessionTtl: z.natural().default(0),
   cookieName: z.string().default("dsh_auth"),
   // pattern 与 dsh-credentials 的 credential-ref 模式一致，同时挡住空串（M2 规格 §4.6）。
   tokenRef: z

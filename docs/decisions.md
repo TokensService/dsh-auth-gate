@@ -155,3 +155,13 @@ PATCH 仅 admin，整型秒 [60, 31536000]）；登录每次签发现读，只�
 权限矩阵不变。
 → [zh](decisions/implemented/2026-09-15-login-timeout-setting.zh.md) ·
 [en](decisions/implemented/2026-09-15-login-timeout-setting.en.md)
+
+## D17. 默认会话永不过期，有限会话由浏览器按绝对时间退出
+
+`sessionTtl` 默认改为 `0`（永不过期），设置页仍可选择有限时长；`/auth/status`
+透出有限会话的 `expiresAt`，client 按绝对时间定时跳回登录页，并保留探测兜底。
+**替代方案**：继续默认 7 天；只靠 30 秒轮询；复用 `0` 秒 Cookie 语义。
+**为什么**：默认符合长期登录诉求，绝对定时器修复 SPA 到期后停留，同时不把
+网络抖动当登出；应用层哨兵与 Cookie 删除语义分离，手工登出仍可靠。
+→ [zh](decisions/implemented/2026-09-19-never-expiring-session-default.zh.md) ·
+[en](decisions/implemented/2026-09-19-never-expiring-session-default.en.md)

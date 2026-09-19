@@ -1,4 +1,4 @@
-/** 会话 TTL（登录超时）的可设边界（秒，含端点）：1 分钟到 365 天；仅 API 层强制。 */
+/** 有限会话 TTL 的可设边界（秒，含端点）：1 分钟到 365 天；0 表示永不过期。 */
 export declare const MIN_SESSION_TTL = 60;
 export declare const MAX_SESSION_TTL = 31536000;
 /** 运行期可调设置（settings.yaml 内容；当前仅会话 TTL，秒）。 */

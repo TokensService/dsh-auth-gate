@@ -128,10 +128,10 @@ describe("PATCH /auth/settings validation (D16)", () => {
     await expect(fs.readFile(harness.settingsFile, "utf8")).rejects.toThrow();
   });
 
-  it("accepts the boundary values 60 and 31536000", async () => {
+  it("accepts zero for never-expiring sessions and the finite boundary values", async () => {
     const harness = await makeHarness();
     const cookie = await harness.cookieFor();
-    for (const sessionTtl of [60, 31536000]) {
+    for (const sessionTtl of [0, 60, 31536000]) {
       const res = await harness.callSettings(patchReq(cookie, { sessionTtl }));
       expect(res.status).toBe(200);
       expect(json(res)).toEqual({ sessionTtl, defaultTtl: 604800 });
@@ -204,6 +204,15 @@ describe("makeSessionTtlResolver (D16)", () => {
     await fs.writeFile(file, "version: 1\nsessionTtl: 3600\n");
     const resolve = makeSessionTtlResolver(file, 604800, { error: () => undefined });
     await expect(resolve()).resolves.toBe(3600);
+  });
+
+  it("preserves a zero fallback and a zero settings value", async () => {
+    const fallback = makeSessionTtlResolver(file, 0, { error: () => undefined });
+    await expect(fallback()).resolves.toBe(0);
+
+    await fs.writeFile(file, "version: 1\nsessionTtl: 0\n");
+    const configured = makeSessionTtlResolver(file, 604800, { error: () => undefined });
+    await expect(configured()).resolves.toBe(0);
   });
 
   it("falls back and logs on a corrupted file", async () => {

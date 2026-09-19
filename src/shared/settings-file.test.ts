@@ -61,7 +61,6 @@ describe("settings file round-trip", () => {
       "version: 2\nsessionTtl: 3600\n",
       "version: 1\nsessionTtl: soon\n",
       "version: 1\nsessionTtl: 3600\nextra: 1\n",
-      "version: 1\nsessionTtl: 0\n",
       "version: 1\nsessionTtl: -5\n",
       "version: 1\nsessionTtl: 1.5\n",
     ];
@@ -85,6 +84,13 @@ describe("settings file round-trip", () => {
       const stat = await fs.stat(file);
       expect(stat.mode & 0o777).toBe(0o600);
     }
+  });
+
+  it("round-trips zero as the never-expiring setting", async () => {
+    await writeSettingsFile(file, { sessionTtl: 0 });
+    const { settings } = await loadSettingsFile(file);
+    expect(settings.sessionTtl).toBe(0);
+    expect(await readSessionTtl(file)).toBe(0);
   });
 
   it("creates the parent directory and serializes an empty settings object", async () => {

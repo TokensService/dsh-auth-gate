@@ -4,6 +4,7 @@ import { getSessionSettings, updateSessionTtl } from "./users-api.ts";
 import { userErrorText } from "./users-dict.ts";
 
 const SECONDS_PER_HOUR = 3600;
+const DEFAULT_FINITE_HOURS = 168;
 /** 页面可设上限（小时，= 1 年）；服务端合法域更宽（1 分钟起），页面取整时子集即可。 */
 const MAX_HOURS = 8760;
 
@@ -48,6 +49,7 @@ const INPUT_STYLE: CSSProperties = {
 
 /** 生效值人性化：≥2 整天 → "{h} 小时（{d} 天）"，整时 → "{h} 小时"（英文单复数分键），其余 → "{s} 秒"。 */
 function formatTtl(tr: Translate, seconds: number): string {
+  if (seconds === 0) return tr("users.ttlNever");
   if (seconds % 86400 === 0 && seconds >= 172800) {
     return tr("users.ttlValueDays")
       .replace("{h}", String(seconds / SECONDS_PER_HOUR))
@@ -72,6 +74,7 @@ export function SessionTimeoutPanel({ tr, isAdmin }: SessionTimeoutPanelProps) {
   const [sessionTtl, setSessionTtl] = useState(0);
   const [defaultTtl, setDefaultTtl] = useState(0);
   const [hours, setHours] = useState("");
+  const [neverExpires, setNeverExpires] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorCode, setErrorCode] = useState("");
   const [saved, setSaved] = useState(false);
@@ -81,7 +84,14 @@ export function SessionTimeoutPanel({ tr, isAdmin }: SessionTimeoutPanelProps) {
       if (result.ok && result.sessionTtl !== undefined && result.defaultTtl !== undefined) {
         setSessionTtl(result.sessionTtl);
         setDefaultTtl(result.defaultTtl);
-        setHours(String(Math.round(result.sessionTtl / SECONDS_PER_HOUR)));
+        setNeverExpires(result.sessionTtl === 0);
+        setHours(
+          String(
+            result.sessionTtl === 0
+              ? DEFAULT_FINITE_HOURS
+              : Math.round(result.sessionTtl / SECONDS_PER_HOUR),
+          ),
+        );
         setState("ready");
       } else {
         setErrorCode(result.code === "" ? "unknown" : result.code);
@@ -93,21 +103,22 @@ export function SessionTimeoutPanel({ tr, isAdmin }: SessionTimeoutPanelProps) {
   const save = useCallback(async () => {
     const value = Number(hours);
     setSaved(false);
-    if (!Number.isInteger(value) || value < 1 || value > MAX_HOURS) {
+    if (!neverExpires && (!Number.isInteger(value) || value < 1 || value > MAX_HOURS)) {
       setErrorCode("invalid_ttl");
       return;
     }
+    const sessionTtl = neverExpires ? 0 : value * SECONDS_PER_HOUR;
     setBusy(true);
     setErrorCode("");
-    const result = await updateSessionTtl(value * SECONDS_PER_HOUR);
+    const result = await updateSessionTtl(sessionTtl);
     setBusy(false);
     if (result.ok) {
-      setSessionTtl(value * SECONDS_PER_HOUR);
+      setSessionTtl(sessionTtl);
       setSaved(true);
     } else {
       setErrorCode(result.code === "" ? "unknown" : result.code);
     }
-  }, [hours]);
+  }, [hours, neverExpires]);
 
   if (state === "loading") return <div style={HINT_STYLE}>{tr("users.loading")}</div>;
   if (state === "error") {
@@ -124,11 +135,16 @@ export function SessionTimeoutPanel({ tr, isAdmin }: SessionTimeoutPanelProps) {
       sessionTtl={sessionTtl}
       defaultTtl={defaultTtl}
       hours={hours}
+      neverExpires={neverExpires}
       busy={busy}
       errorCode={errorCode}
       saved={saved}
       onHours={(value) => {
         setHours(value);
+        setSaved(false);
+      }}
+      onNeverExpires={(value) => {
+        setNeverExpires(value);
         setSaved(false);
       }}
       onSave={() => void save()}
@@ -142,10 +158,12 @@ interface ReadyBodyProps {
   sessionTtl: number;
   defaultTtl: number;
   hours: string;
+  neverExpires: boolean;
   busy: boolean;
   errorCode: string;
   saved: boolean;
   onHours: (value: string) => void;
+  onNeverExpires: (value: boolean) => void;
   onSave: () => void;
 }
 
@@ -162,6 +180,15 @@ function ReadyBody(props: ReadyBodyProps) {
       </div>
       {isAdmin && (
         <div style={ROW_STYLE}>
+          <label style={ROW_STYLE}>
+            <input
+              type="checkbox"
+              checked={props.neverExpires}
+              disabled={props.busy}
+              onChange={(event) => props.onNeverExpires(event.target.checked)}
+            />
+            <span style={HINT_STYLE}>{tr("users.ttlNever")}</span>
+          </label>
           <input
             type="number"
             style={INPUT_STYLE}
@@ -169,7 +196,7 @@ function ReadyBody(props: ReadyBodyProps) {
             max={MAX_HOURS}
             aria-label={tr("users.ttlTitle")}
             value={props.hours}
-            disabled={props.busy}
+            disabled={props.busy || props.neverExpires}
             onChange={(event) => props.onHours(event.target.value)}
           />
           <span style={HINT_STYLE}>{tr("users.ttlHours")}</span>

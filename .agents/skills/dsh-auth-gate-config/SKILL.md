@@ -41,7 +41,7 @@ Override by `id` in `$DSH_HOME/cordis.patch.yml`:
     totp: "optional" # "off"(default) | "optional" | "required" - two-factor for password mode / 密码模式两步验证："off"（默认，忽略密钥）| "optional"（有密钥的用户两段式）| "required"（全员必须）
     cookieSecure: true # HTTPS requires true; plain-http testing false (browser rejects cookie) / HTTPS 必须 true；纯 http 测试 false（否则浏览器不收 cookie）
     usersFile: "" # password-mode user file; default $DSH_HOME/auth/users.yaml / 密码模式用户文件；默认 $DSH_HOME/auth/users.yaml
-    sessionTtl: 604800 # session TTL in seconds / 会话秒数
+    sessionTtl: 0 # 0 = never expires; positive = TTL seconds / 0 = 永不过期；正数 = 会话秒数
     cookieName: dsh_auth # session cookie name / 会话 cookie 名
     tokenRef: DSH_AUTH_TOKEN # token-mode credential reference (env var name) / token 模式的凭证引用（环境变量名）
     logoutOrder: 1000 # logout button slot order in Settings > General (larger = further down) / 退出按钮在 设置→通用设置 槽位顺序（越大越靠底）
@@ -53,6 +53,11 @@ Override by `id` in `$DSH_HOME/cordis.patch.yml`:
   (`DSH_AUTH_TOKEN`). / 改为 token 模式时不用建用户文件，把共享秘密放进
   `.credentials.yaml`（`DSH_AUTH_TOKEN`）。
 - `users.yaml` / `.credentials.yaml` must be `0600`. / 均 0600。
+- `sessionTtl` defaults to `0` (never expires). In password mode an admin may
+  choose "Never expires" or a finite timeout in Settings > User Management;
+  changes affect newly issued sessions only. / `sessionTtl` 默认 `0`（永不过期）。
+  password 模式下 admin 可在 设置 > 用户管理 中选择「永不过期」或有限时长；
+  修改只影响之后新签发的会话。
 
 ## CLI (`dsh-auth`)
 
@@ -96,7 +101,7 @@ Run on an isolated test instance. / 隔离测试实例上验证：
 - Login page: `GET /auth/login` → 200 with a username/password form; unauthenticated
   API calls always get 401, HTML requests get 302 to login. / 登录页：
   GET /auth/login → 200 含 username/password 表单；API 未认证一律 401、HTML 302 到登录页。
-- `curl http://127.0.0.1:<port>/auth/status` → `{"authenticated":false,"logoutOrder":1000}`
+- `curl http://127.0.0.1:<port>/auth/status` → `{"authenticated":false,"username":null,"logoutOrder":1000,"expiresAt":null}`
   (status only accepts cookies; Bearer does not participate). / `curl .../auth/status`
   返回该 JSON（status 只认 cookie，Bearer 不参与）。
 - After login, Settings > General: the last child of

@@ -203,6 +203,20 @@ describe("GET /auth/login (password)", () => {
   });
 });
 
+it("issues a persistent password session when sessionTtl resolves to zero", async () => {
+  const harness = makeHarness();
+  harness.deps.sessionTtl = () => Promise.resolve(0);
+  registerPasswordEndpoints(harness.deps);
+  const res = makeRes();
+  await handlerOf(
+    harness,
+    "exact",
+    "/auth/login",
+  )(makeReq({ method: "POST", body: Buffer.from("username=alice&password=pw") }), res.res);
+  expect([...harness.table.entries()][0]?.[1].expiresAt).toBe(0);
+  expect(res.headers["set-cookie"]).toContain("Max-Age=2147483647");
+});
+
 describe("POST /auth/logout", () => {
   it("revokes the session cookie and clears it", async () => {
     const harness = makeHarness();

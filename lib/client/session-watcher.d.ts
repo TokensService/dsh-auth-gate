@@ -2,12 +2,13 @@
  * 会话过期看门狗（client 半边）。dsh web 是长寿命 SPA：登录后页面不再整页
  * 导航，而服务端会话过期后守卫只能拒绝「新」请求（页面导航 302 登录页、
  * XHR 401、WS 拒握手），已加载的界面不会自己退回登录页，表现为登录超时后
- * 仍停留在登录后界面。本模块按周期 + 窗口焦点事件探测 /auth/status，拿到
- * 明确的 authenticated:false 即整页跳转登录页（next 回跳当前路径）。
- * 不确定的探测结果（网络错误、非 200、JSON 解析失败、字段缺失）一律不跳，
- * 避免服务器重启或网络抖动把人误踢下线。
+ * 仍停留在登录后界面。本模块启动后立即探测 /auth/status；有限会话按服务端
+ * expiresAt 安排本地绝对到期定时器，并以周期 + 窗口焦点/可见性事件作为吊销
+ * 兜底。拿到明确的 authenticated:false 或到达已确认的 expiresAt 时整页跳转
+ * 登录页（next 回跳当前路径）。不确定的探测结果（网络错误、非 200、JSON 解析
+ * 失败、字段缺失）一律不跳，也不取消已知期限，避免网络抖动误踢或延迟退出。
  */
-/** 探测间隔（毫秒）：会话过期后最迟在这个量级内跳回登录页。 */
+/** 探测间隔（毫秒）：用于发现吊销，并作为绝对到期定时器之外的兜底。 */
 export declare const SESSION_WATCH_INTERVAL_MS = 30000;
 /** 状态端点（token / password 两种模式都注册；GET 响应 JSON 含 authenticated）。 */
 export declare const SESSION_STATUS_URL = "/auth/status";

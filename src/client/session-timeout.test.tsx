@@ -19,6 +19,13 @@ interface Call {
   body?: Record<string, unknown>;
 }
 
+interface SettingsMockOptions {
+  getStatus: number;
+  patchStatus: number;
+  sessionTtl: number;
+  defaultTtl: number;
+}
+
 async function flushMicrotasks(): Promise<void> {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
@@ -27,26 +34,38 @@ function jsonResponse(status: number, body: unknown): unknown {
   return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) };
 }
 
+function settingsResponse(
+  method: string,
+  parsed: Record<string, unknown> | undefined,
+  options: SettingsMockOptions,
+): unknown {
+  if (method === "PATCH") {
+    return options.patchStatus === 200
+      ? { sessionTtl: parsed?.["sessionTtl"], defaultTtl: options.defaultTtl }
+      : { error: "forbidden" };
+  }
+  return options.getStatus === 200
+    ? { sessionTtl: options.sessionTtl, defaultTtl: options.defaultTtl }
+    : { error: "unauthorized" };
+}
+
 /** 路由式 fetch mock：/auth/settings 的 GET 读 + PATCH 改（PATCH 回显请求值）。 */
-function makeSettingsMock(options?: { getStatus?: number; patchStatus?: number }) {
+function makeSettingsMock(overrides: Partial<SettingsMockOptions> = {}) {
+  const options: SettingsMockOptions = {
+    getStatus: 200,
+    patchStatus: 200,
+    sessionTtl: 604800,
+    defaultTtl: 604800,
+    ...overrides,
+  };
   const calls: Call[] = [];
   const mock = vi.fn((url: string, init?: { method?: string; body?: string }): Promise<unknown> => {
     const method = init?.method ?? "GET";
     const parsed =
       init?.body === undefined ? undefined : (JSON.parse(init.body) as Record<string, unknown>);
     calls.push({ url, method, ...(parsed === undefined ? {} : { body: parsed }) });
-    if (method === "PATCH") {
-      const status = options?.patchStatus ?? 200;
-      const body =
-        status === 200
-          ? { sessionTtl: parsed?.["sessionTtl"], defaultTtl: 604800 }
-          : { error: "forbidden" };
-      return Promise.resolve(jsonResponse(status, body));
-    }
-    const status = options?.getStatus ?? 200;
-    const body =
-      status === 200 ? { sessionTtl: 604800, defaultTtl: 604800 } : { error: "unauthorized" };
-    return Promise.resolve(jsonResponse(status, body));
+    const status = method === "PATCH" ? options.patchStatus : options.getStatus;
+    return Promise.resolve(jsonResponse(status, settingsResponse(method, parsed, options)));
   });
   return { mock, calls };
 }
@@ -127,7 +146,36 @@ describe("SessionTimeoutPanel (D16)", () => {
     root.unmount();
     container.remove();
   });
+});
 
+describe("SessionTimeoutPanel never-expiring option (D17)", () => {
+  it("shows and saves the option as sessionTtl zero", async () => {
+    const { mock, calls } = makeSettingsMock({ sessionTtl: 0, defaultTtl: 0 });
+    fetchMock.mockImplementation(mock);
+    const { root, container } = await renderPanel(true);
+    const never = container.querySelector<HTMLInputElement>("input[type='checkbox']")!;
+    const hours = container.querySelector<HTMLInputElement>("input[type='number']")!;
+    expect(container.textContent).toContain("Never expires");
+    expect(never.checked).toBe(true);
+    expect(hours.disabled).toBe(true);
+
+    await click(never);
+    expect(hours.disabled).toBe(false);
+    await typeInto(hours, "24");
+    await click(never);
+    await click(buttonByText(container, "Save"));
+    expect(
+      calls.some(
+        (c) => c.url === "/auth/settings" && c.method === "PATCH" && c.body?.["sessionTtl"] === 0,
+      ),
+    ).toBe(true);
+    expect(container.textContent).toContain("Effective now: Never expires");
+    root.unmount();
+    container.remove();
+  });
+});
+
+describe("SessionTimeoutPanel validation and permissions (D16)", () => {
   it("rejects out-of-range hours locally without calling the API", async () => {
     const { mock, calls } = makeSettingsMock();
     fetchMock.mockImplementation(mock);

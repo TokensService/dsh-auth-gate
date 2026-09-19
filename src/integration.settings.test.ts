@@ -32,7 +32,7 @@ describe("integration: /auth/settings over real HTTP (D16)", () => {
 
       const adminCookie = await loginCookie(base);
       const initial = await fetch(`${base}/auth/settings`, { headers: { cookie: adminCookie } });
-      expect(await initial.json()).toEqual({ sessionTtl: 604800, defaultTtl: 604800 });
+      expect(await initial.json()).toEqual({ sessionTtl: 0, defaultTtl: 0 });
 
       const plainCookie = await loginCookie(base, "plain");
       const forbidden = await settingsCall(base, "PATCH", plainCookie, { sessionTtl: 3600 });
@@ -45,14 +45,14 @@ describe("integration: /auth/settings over real HTTP (D16)", () => {
 
       const updated = await settingsCall(base, "PATCH", adminCookie, { sessionTtl: 3600 });
       expect(updated.status).toBe(200);
-      expect(await updated.json()).toEqual({ sessionTtl: 3600, defaultTtl: 604800 });
+      expect(await updated.json()).toEqual({ sessionTtl: 3600, defaultTtl: 0 });
       const onDisk = await fs.readFile(join(root, "settings.yaml"), "utf8");
       expect(onDisk).toContain("sessionTtl: 3600");
 
       const reflected = await fetch(`${base}/auth/settings`, { headers: { cookie: plainCookie } });
-      expect(await reflected.json()).toEqual({ sessionTtl: 3600, defaultTtl: 604800 });
+      expect(await reflected.json()).toEqual({ sessionTtl: 3600, defaultTtl: 0 });
 
-      // 动态 TTL 真路径：PATCH 之后新签发的会话带新 Max-Age（配置默认是 604800）。
+      // 动态 TTL 真路径：PATCH 之后新签发的会话从永不过期切换为有限 Max-Age。
       const login = await fetch(`${base}/auth/login`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },

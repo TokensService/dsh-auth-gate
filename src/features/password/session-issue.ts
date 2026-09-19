@@ -1,5 +1,5 @@
 import type { ServerResponse } from "node:http";
-import { buildSetCookie, type SessionStore } from "../../session/index.js";
+import { buildSessionCookie, type SessionStore } from "../../session/index.js";
 
 /** issueSession 所需 deps 子集（结构化类型；PasswordEndpointsDeps 天然兼容）。 */
 export interface IssueSessionDeps {
@@ -31,7 +31,7 @@ export async function issueSession(
   res.setHeader("cache-control", "no-store");
   const cookies = [
     ...(extraSetCookie ?? []),
-    buildSetCookie(deps.cookieName, sessionToken, ttl, deps.cookieSecure),
+    buildSessionCookie(deps.cookieName, sessionToken, ttl, deps.cookieSecure),
   ];
   res.setHeader("set-cookie", cookies);
   let location = next;

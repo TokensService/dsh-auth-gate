@@ -16,38 +16,38 @@
 
 ## 2. 行为契约
 
-| 场景                                            | 行为                                                                                                                                                             |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 无有效会话的任何调用                            | `401 {"error":"unauthorized"}`（会话 cookie 或 Bearer 会话 token；端点自校验）                                                                                   |
-| 会话存储不可用                                  | `503 {"error":"store_unavailable"}`                                                                                                                              |
-| `GET /auth/users`                               | `200 {"users":[{username,disabled,totp,admin,current}]}`，按用户名字典序，绝不含哈希/secret；任意会话可读                                                        |
-| `POST` 新用户（仅 admin）                       | 校验用户名（`USERNAME_RE`）+ 非空密码 → scrypt 哈希 → 原子重写；`201` + 用户视图                                                                                 |
-| `POST`/`DELETE` 非 admin 会话                   | `403 forbidden`（D13：用户管理仅管理员）                                                                                                                         |
-| `PATCH` 非 admin 会话                           | 仅允许改**自己的密码**；目标非己或带 `disabled`/`totp` 字段 → `403 forbidden`                                                                                    |
-| `POST` 重名/非法用户名/空密码                   | `409 duplicate` / `400 invalid_username` / `400 empty_password`                                                                                                  |
-| `PATCH` 改密码                                  | 新 salt 重哈希；旧密码立即失效                                                                                                                                   |
-| 用户名变更                                      | 不支持：用户名即主键，任何角色都不能经 API/页面改名（只能删除后重建）                                                                                            |
-| `PATCH disabled:true` 针对自己                  | `409 self_target`（防误操作；CLI 仍是逃生通道）                                                                                                                  |
-| `PATCH disabled:true`/`DELETE` 最后启用用户     | `409 last_enabled`（防锁死：至少保留一个启用用户）                                                                                                               |
-| `PATCH totp:"enable"`                           | 生成 secret 并落盘，响应**一次性**返回 `{totpSecret,totpUri}`（已有 secret → 409 `totp_exists`）                                                                 |
-| `PATCH totp:"disable"`                          | 移除 secret（幂等，保留 role）                                                                                                                                   |
-| `DELETE` 用户（仅 admin）                       | 从 `users.yaml` 移除；`200 {"deleted":name}`；自我删除 → `409 self_target`                                                                                       |
-| 变更请求体非 JSON                               | `415 unsupported_media_type`（表单无法伪造 JSON content-type；SameSite=Lax 之上的 CSRF 层）                                                                      |
-| 请求体 > 16 KiB / JSON 非法                     | `413 body_too_large` / `400 bad_json`                                                                                                                            |
-| 被禁用/删除用户的在途会话                       | 会话在过期前仍有效（D8：明确不实现 `revokeBySubject`；页面上有脚注说明）；角色随记录判定——被删除 admin 的在途会话自动失去管理权（fail-closed）                   |
-| token 模式                                      | 端点不注册 → 落 `/auth` 兜底 `404`；设置页显示「不可用」提示                                                                                                     |
-| users.yaml 读写失败                             | `503 user_store_unavailable` + error 日志                                                                                                                        |
-| `POST /auth/users/import {text}`（仅 admin）    | 本地文件原文逐行解析 `用户名,密码`（空行/`#` 注释跳过，首个逗号切分）；全量校验 → 原子写入；`201 {created, users}`                                               |
-| `POST /auth/users/import {path}`（仅 admin）    | 读服务器上任意绝对路径的 `.txt`（D15；相对路径/非 `.txt`/不存在 → 404）后同 `{text}` 流程                                                                        |
-| 非 POST 访问 `/auth/users/import`               | `405`（GET 列举随 imports/ 沙箱模式一并移除）                                                                                                                    |
-| 导入内容有非法行                                | `400 invalid_entry` + `{failures:[{line,username,code}]}`——all-or-nothing，一行不写（code 复用 invalid_username/empty_password/duplicate）                       |
-| 导入体非 text/path 恰好其一                     | `400 invalid_field`（沙箱模式移除后单独 `{file}` 视为无来源）；空内容（只有空行/注释）→ `400 no_entries`；超 100 条 → `400 too_many_entries`                     |
-| 服务端导入文件缺失/非 txt/超 256 KiB            | `404 import_file_not_found` / `404` / `413 import_file_too_large`                                                                                                |
-| 导入请求体 > 256 KiB                            | `413 body_too_large`（仅导入路由放宽上限；`/auth/users` 其余方法仍 16 KiB）                                                                                      |
-| `GET /auth/settings`（任意会话）                | `200 {sessionTtl, defaultTtl}`：生效中的会话 TTL（settings.yaml 值，未设置则为插件配置默认）；任意会话可读                                                       |
-| `PATCH /auth/settings {sessionTtl}`（仅 admin） | 整型秒 [60, 31536000] → 全量原子写 settings.yaml；`200 {sessionTtl, defaultTtl}`；非法值 → `400 invalid_ttl`；非 admin → `403 forbidden`；只影响之后新签发的会话 |
-| settings.yaml 读写失败                          | `503 settings_store_unavailable` + error 日志（一次成功 PATCH 可自愈损坏文件）                                                                                   |
-| 非 GET/PATCH 访问 `/auth/settings`              | `405`（allow: GET, PATCH）                                                                                                                                       |
+| 场景                                            | 行为                                                                                                                                                                              |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 无有效会话的任何调用                            | `401 {"error":"unauthorized"}`（会话 cookie 或 Bearer 会话 token；端点自校验）                                                                                                    |
+| 会话存储不可用                                  | `503 {"error":"store_unavailable"}`                                                                                                                                               |
+| `GET /auth/users`                               | `200 {"users":[{username,disabled,totp,admin,current}]}`，按用户名字典序，绝不含哈希/secret；任意会话可读                                                                         |
+| `POST` 新用户（仅 admin）                       | 校验用户名（`USERNAME_RE`）+ 非空密码 → scrypt 哈希 → 原子重写；`201` + 用户视图                                                                                                  |
+| `POST`/`DELETE` 非 admin 会话                   | `403 forbidden`（D13：用户管理仅管理员）                                                                                                                                          |
+| `PATCH` 非 admin 会话                           | 仅允许改**自己的密码**；目标非己或带 `disabled`/`totp` 字段 → `403 forbidden`                                                                                                     |
+| `POST` 重名/非法用户名/空密码                   | `409 duplicate` / `400 invalid_username` / `400 empty_password`                                                                                                                   |
+| `PATCH` 改密码                                  | 新 salt 重哈希；旧密码立即失效                                                                                                                                                    |
+| 用户名变更                                      | 不支持：用户名即主键，任何角色都不能经 API/页面改名（只能删除后重建）                                                                                                             |
+| `PATCH disabled:true` 针对自己                  | `409 self_target`（防误操作；CLI 仍是逃生通道）                                                                                                                                   |
+| `PATCH disabled:true`/`DELETE` 最后启用用户     | `409 last_enabled`（防锁死：至少保留一个启用用户）                                                                                                                                |
+| `PATCH totp:"enable"`                           | 生成 secret 并落盘，响应**一次性**返回 `{totpSecret,totpUri}`（已有 secret → 409 `totp_exists`）                                                                                  |
+| `PATCH totp:"disable"`                          | 移除 secret（幂等，保留 role）                                                                                                                                                    |
+| `DELETE` 用户（仅 admin）                       | 从 `users.yaml` 移除；`200 {"deleted":name}`；自我删除 → `409 self_target`                                                                                                        |
+| 变更请求体非 JSON                               | `415 unsupported_media_type`（表单无法伪造 JSON content-type；SameSite=Lax 之上的 CSRF 层）                                                                                       |
+| 请求体 > 16 KiB / JSON 非法                     | `413 body_too_large` / `400 bad_json`                                                                                                                                             |
+| 被禁用/删除用户的在途会话                       | 会话在过期前仍有效（D8：明确不实现 `revokeBySubject`；页面上有脚注说明）；角色随记录判定——被删除 admin 的在途会话自动失去管理权（fail-closed）                                    |
+| token 模式                                      | 端点不注册 → 落 `/auth` 兜底 `404`；设置页显示「不可用」提示                                                                                                                      |
+| users.yaml 读写失败                             | `503 user_store_unavailable` + error 日志                                                                                                                                         |
+| `POST /auth/users/import {text}`（仅 admin）    | 本地文件原文逐行解析 `用户名,密码`（空行/`#` 注释跳过，首个逗号切分）；全量校验 → 原子写入；`201 {created, users}`                                                                |
+| `POST /auth/users/import {path}`（仅 admin）    | 读服务器上任意绝对路径的 `.txt`（D15；相对路径/非 `.txt`/不存在 → 404）后同 `{text}` 流程                                                                                         |
+| 非 POST 访问 `/auth/users/import`               | `405`（GET 列举随 imports/ 沙箱模式一并移除）                                                                                                                                     |
+| 导入内容有非法行                                | `400 invalid_entry` + `{failures:[{line,username,code}]}`——all-or-nothing，一行不写（code 复用 invalid_username/empty_password/duplicate）                                        |
+| 导入体非 text/path 恰好其一                     | `400 invalid_field`（沙箱模式移除后单独 `{file}` 视为无来源）；空内容（只有空行/注释）→ `400 no_entries`；超 100 条 → `400 too_many_entries`                                      |
+| 服务端导入文件缺失/非 txt/超 256 KiB            | `404 import_file_not_found` / `404` / `413 import_file_too_large`                                                                                                                 |
+| 导入请求体 > 256 KiB                            | `413 body_too_large`（仅导入路由放宽上限；`/auth/users` 其余方法仍 16 KiB）                                                                                                       |
+| `GET /auth/settings`（任意会话）                | `200 {sessionTtl, defaultTtl}`：生效中的会话 TTL（settings.yaml 值，未设置则为插件配置默认）；任意会话可读                                                                        |
+| `PATCH /auth/settings {sessionTtl}`（仅 admin） | `0`（永不过期）或整型秒 [60, 31536000] → 全量原子写 settings.yaml；`200 {sessionTtl, defaultTtl}`；非法值 → `400 invalid_ttl`；非 admin → `403 forbidden`；只影响之后新签发的会话 |
+| settings.yaml 读写失败                          | `503 settings_store_unavailable` + error 日志（一次成功 PATCH 可自愈损坏文件）                                                                                                    |
+| 非 GET/PATCH 访问 `/auth/settings`              | `405`（allow: GET, PATCH）                                                                                                                                                        |
 
 fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做会话校验（cookie
 优先、Bearer 会话 token 兜底——与门同一个会话模型）。所有错误响应都是带稳定
@@ -87,15 +87,17 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   admin、限 `.txt` 后缀、大小封顶，一切非法形态一律 404）。服务端统一解析
   `用户名,密码` 行（行号明细可机读），all-or-nothing 原子写；上限 256 KiB /
   100 条（scrypt 总成本秒级）。导入用户一律普通角色（角色 CLI-only，D13）。
-- **D-UM-10**（D16）：登录超时（会话 TTL）运行期可配。设置落在与 users.yaml
+- **D-UM-10**（D16，D17 修订）：登录超时（会话 TTL）运行期可配。设置落在与 users.yaml
   同目录的 `settings.yaml`（strict zod schema、原子写 0600，同 writeUsersFile
   纪律；零新配置，`usersFile` 覆盖时随之迁移）。新 exact 路由 `/auth/settings`
   （仅 password 模式）：GET 任意会话返回 `{sessionTtl, defaultTtl}`；PATCH 仅
-  admin，整型秒 [60, 31536000]，全量写（损坏文件可被一次成功写自愈）。
+  admin，`0` 表示永不过期，或整型秒 [60, 31536000]，全量写（损坏文件可被
+  一次成功写自愈）。
   `IssueSessionDeps.sessionTtl` 由静态数值改为每次签发解析：登录路径现读
   settings.yaml，缺失/读错回落插件配置（读错记 error 日志，不阻断登录；
   TTL 非认证边界）。生效语义与 D-UM-5 脚注一致：只影响新会话，存量会话按
-  签发时 TTL 过期。页面顶部展示当前值（非 admin 只读），admin 按整小时修改。
+  签发时 TTL 过期。插件默认值为 `0`（永不过期）。页面顶部展示当前值（非 admin
+  只读），admin 可选择永不过期或按整小时修改有限时长。
 
 ## 4. 部署说明
 

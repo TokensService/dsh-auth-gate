@@ -3,7 +3,7 @@ import path from "node:path";
 import { parse as parseYaml, stringify } from "yaml";
 import { z } from "zod";
 
-/** 会话 TTL（登录超时）的可设边界（秒，含端点）：1 分钟到 365 天；仅 API 层强制。 */
+/** 有限会话 TTL 的可设边界（秒，含端点）：1 分钟到 365 天；0 表示永不过期。 */
 export const MIN_SESSION_TTL = 60;
 export const MAX_SESSION_TTL = 31536000;
 
@@ -24,7 +24,7 @@ export class SettingsFileError extends Error {}
 const settingsFileSchema = z
   .object({
     version: z.literal(1),
-    sessionTtl: z.number().int().positive().optional(),
+    sessionTtl: z.number().int().nonnegative().optional(),
   })
   .strict();
 

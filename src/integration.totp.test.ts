@@ -55,7 +55,7 @@ describe("integration: TOTP two-stage flow over real HTTP", () => {
       );
       const status = await fetch(`${base}/auth/status`, { headers: { cookie: sessionCookie } });
       expect(await status.text()).toBe(
-        '{"authenticated":true,"username":"admin","logoutOrder":1000}',
+        '{"authenticated":true,"username":"admin","logoutOrder":1000,"expiresAt":null}',
       );
     } finally {
       await unmountStack(fibers, root);

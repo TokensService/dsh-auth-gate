@@ -161,11 +161,21 @@ describe("GET /auth/status", () => {
       "/auth/status",
     )(makeReq({ cookie: `dsh_auth=${issued.token}` }), authed.res);
     expect(authed.status).toBe(200);
-    expect(authed.body).toBe('{"authenticated":true,"username":null,"logoutOrder":1000}');
+    expect(JSON.parse(authed.body)).toEqual({
+      authenticated: true,
+      username: null,
+      logoutOrder: 1000,
+      expiresAt: issued.session.expiresAt,
+    });
 
     const anonymous = makeRes();
     await handlerOf(harness, "exact", "/auth/status")(makeReq({}), anonymous.res);
-    expect(anonymous.body).toBe('{"authenticated":false,"username":null,"logoutOrder":1000}');
+    expect(JSON.parse(anonymous.body)).toEqual({
+      authenticated: false,
+      username: null,
+      logoutOrder: 1000,
+      expiresAt: null,
+    });
 
     const bearerOnly = makeRes();
     await handlerOf(
@@ -173,7 +183,12 @@ describe("GET /auth/status", () => {
       "exact",
       "/auth/status",
     )(makeReq({ authorization: "Bearer good-token" }), bearerOnly.res);
-    expect(bearerOnly.body).toBe('{"authenticated":false,"username":null,"logoutOrder":1000}');
+    expect(JSON.parse(bearerOnly.body)).toEqual({
+      authenticated: false,
+      username: null,
+      logoutOrder: 1000,
+      expiresAt: null,
+    });
   });
 
   it("echoes the configured logoutOrder for the client logout CTA", async () => {
@@ -182,7 +197,12 @@ describe("GET /auth/status", () => {
     const res = makeRes();
     await handlerOf(harness, "exact", "/auth/status")(makeReq({}), res.res);
     expect(res.status).toBe(200);
-    expect(res.body).toBe('{"authenticated":false,"username":null,"logoutOrder":5000}');
+    expect(JSON.parse(res.body)).toEqual({
+      authenticated: false,
+      username: null,
+      logoutOrder: 5000,
+      expiresAt: null,
+    });
   });
 
   it("reports username null even for a valid session (token mode has no user identity)", async () => {
@@ -200,6 +220,7 @@ describe("GET /auth/status", () => {
       authenticated: true,
       username: null,
       logoutOrder: 1000,
+      expiresAt: issued.session.expiresAt,
     });
   });
 });
