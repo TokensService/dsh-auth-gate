@@ -4,8 +4,7 @@
  * XHR 401、WS 拒握手），已加载的界面不会自己退回登录页，表现为登录超时后
  * 仍停留在登录后界面。本模块启动后立即探测 /auth/status；有限会话按服务端
  * expiresAt - serverTime 安排本地相对到期定时器，并以周期 + 窗口焦点/可见性
- * 事件作为吊销
- * 兜底。拿到明确的 authenticated:false 或到达已确认的 expiresAt 时整页跳转
+ * 事件作为吊销兜底。拿到明确的 authenticated:false 或到达已确认的 expiresAt 时整页跳转
  * 登录页（next 回跳当前路径）。不确定的探测结果（网络错误、非 200、JSON 解析
  * 失败、字段缺失）一律不跳，也不取消已知期限，避免网络抖动误踢或延迟退出。
  */
@@ -28,8 +27,8 @@ export interface SessionWatcherOptions {
 }
 /**
  * 启动看门狗并返回 disposer（清定时器 + 摘事件监听，供 ctx.effect 级联卸载）。
- * 跳转最多发生一次：首次确认过期即停表摘监听。并发探针按请求启动顺序提交状态，
- * 较旧的响应不能覆盖较新的确定结果。
+ * 跳转最多发生一次：首次确认过期即停表摘监听。并发探针只允许最新发起的一次提交
+ * 状态，较旧的响应即使先完成也不能触发跳转或覆盖新会话。
  */
 export declare function startSessionWatcher(options?: SessionWatcherOptions): () => void;
 //# sourceMappingURL=session-watcher.d.ts.map

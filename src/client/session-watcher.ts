@@ -63,8 +63,8 @@ export interface SessionWatcherOptions {
 
 /**
  * 启动看门狗并返回 disposer（清定时器 + 摘事件监听，供 ctx.effect 级联卸载）。
- * 跳转最多发生一次：首次确认过期即停表摘监听。并发探针按请求启动顺序提交状态，
- * 较旧的响应不能覆盖较新的确定结果。
+ * 跳转最多发生一次：首次确认过期即停表摘监听。并发探针只允许最新发起的一次提交
+ * 状态，较旧的响应即使先完成也不能触发跳转或覆盖新会话。
  */
 export function startSessionWatcher(options: SessionWatcherOptions = {}): () => void {
   const intervalMs = options.intervalMs ?? SESSION_WATCH_INTERVAL_MS;
@@ -76,7 +76,6 @@ export function startSessionWatcher(options: SessionWatcherOptions = {}): () => 
   let active = true;
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
   let nextProbeId = 0;
-  let lastAppliedProbeId = 0;
 
   const cleanup = (): void => {
     clearInterval(timer);
@@ -112,14 +111,12 @@ export function startSessionWatcher(options: SessionWatcherOptions = {}): () => 
     const requestStartedAt = performance.now();
     const body = await fetchSessionStatus();
     if (body === undefined) return; // 状态不确定：保持现状等下一轮
-    if (!active || probeId < lastAppliedProbeId) return;
+    if (!active || probeId !== nextProbeId) return;
     if (body.authenticated === false) {
-      lastAppliedProbeId = probeId;
       redirect();
       return;
     }
     if (body.authenticated !== true) return;
-    lastAppliedProbeId = probeId;
     if (body.expiresAt === null) {
       if (expiryTimer !== undefined) clearTimeout(expiryTimer);
       expiryTimer = undefined;

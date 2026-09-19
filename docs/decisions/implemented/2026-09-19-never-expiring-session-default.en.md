@@ -15,9 +15,9 @@ finite session's absolute expiry as epoch milliseconds in `expiresAt`, or
 `null` for a non-expiring or unauthenticated session. It also reports
 `serverTime`, so the client derives a relative remaining duration without
 depending on the browser wall clock. The client probes status immediately,
-arms a local timer for a finite expiry, discards older responses that arrive
-after a newer conclusive response, and retains periodic, focus, and visibility
-probes for revocation and cross-tab changes.
+arms a local timer for a finite expiry, permits only the latest-started probe
+to apply a response, and retains periodic, focus, and visibility probes for
+revocation and cross-tab changes.
 
 Existing `settings.yaml` values remain explicit policy and are not rewritten
 on upgrade. Any TTL change still affects newly issued sessions only.
@@ -57,7 +57,7 @@ keeps browser storage practical while the server remains authoritative; a
 browser may still clear or clamp persistent cookies according to its own
 policy. Exposing an absolute expiry plus the server time lets the browser leave
 the stale SPA at the intended deadline without trusting its wall clock or a
-later network response. Response ordering prevents a slow older probe from
-replacing newer session state. Periodic status probes remain useful for
+later network response. Response ordering prevents any older in-flight probe
+from redirecting or replacing newer session state. Periodic status probes remain useful for
 revocation, while transient probe failures do not cause false logout or cancel
 the already armed deadline.

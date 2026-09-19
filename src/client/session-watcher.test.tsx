@@ -133,6 +133,20 @@ describe("startSessionWatcher interval probing", () => {
 describe("startSessionWatcher response ordering", () => {
   const w = makeWatcher();
 
+  it("ignores an older unauthenticated response while a newer probe is pending", async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    w.fetchMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    w.start();
+    window.dispatchEvent(new Event("focus"));
+    first.resolve(statusResponse(false));
+    await flushMicrotasks();
+    expect(w.navigate).not.toHaveBeenCalled();
+    second.resolve(statusResponse(true, null));
+    await flushMicrotasks();
+    expect(w.navigate).not.toHaveBeenCalled();
+  });
+
   it("ignores an older finite response after a newer never-expiring response", async () => {
     const first = deferred<unknown>();
     const second = deferred<unknown>();
