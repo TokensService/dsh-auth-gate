@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.13.0](https://github.com/TokensService/dsh-auth-gate/compare/v0.12.0...v0.13.0) (2026-09-19)
+
+
+### Features
+
+* add user management settings page and /auth/users API ([5508640](https://github.com/TokensService/dsh-auth-gate/commit/550864036d3fd4efc4031ced1f2d6072d30df18b))
+* admin-configurable login timeout on the user management page (D16) ([3a69411](https://github.com/TokensService/dsh-auth-gate/commit/3a694117251396d223479d0b0ffcc310551a07a9))
+* batch-import users from txt (local file or server imports/ dir) ([28aeba3](https://github.com/TokensService/dsh-auth-gate/commit/28aeba318f92f061933d45f798a7e98509091eb6))
+* expose session username via /auth/status and show it in settings ([08a1b1c](https://github.com/TokensService/dsh-auth-gate/commit/08a1b1c542d8ee9061dfdb68e7c25ceb38f3c30d))
+* expose session username via /auth/status and show it in settings ([5cdd9c4](https://github.com/TokensService/dsh-auth-gate/commit/5cdd9c455145ad55d5b08bdbf7d69a4aae46505e))
+* gate user management behind an admin role ([dbbd507](https://github.com/TokensService/dsh-auth-gate/commit/dbbd507de1df456a901402c1d8beb9bdd84f72fb))
+* switch server-side batch import to arbitrary absolute .txt path (D15) ([1d302b7](https://github.com/TokensService/dsh-auth-gate/commit/1d302b7818f9e6f2f172487ad1385681a7103bb7))
+
+
+### Bug Fixes
+
+* **auth:** default sessions to never expire ([03fa732](https://github.com/TokensService/dsh-auth-gate/commit/03fa73255052a56d87ceef4875f6074ab6294392))
+* **auth:** discard stale session probes ([a375175](https://github.com/TokensService/dsh-auth-gate/commit/a375175d43ba12a0f28393fa5faac35a2da4e347))
+* **auth:** make session expiry timer race-safe ([12b9cf4](https://github.com/TokensService/dsh-auth-gate/commit/12b9cf4ee8552ec71c3c5f0933155b3943eead64))
+* redirect to the login page when the session expires ([c62afe9](https://github.com/TokensService/dsh-auth-gate/commit/c62afe9f3646662361c398a1b3287c02f33171f9))
+
 ## [0.12.0](https://github.com/TecFancy/dsh-auth-gate/compare/v0.11.1...v0.12.0) (2026-08-31)
 
 
