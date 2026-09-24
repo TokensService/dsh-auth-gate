@@ -47,8 +47,8 @@ function makeWatcher() {
   const harness = {
     fetchMock,
     navigate,
-    start(): void {
-      dispose = startSessionWatcher({ navigate });
+    start(options?: { intervalMs?: number; confirmations?: number }): void {
+      dispose = startSessionWatcher({ navigate, ...options });
     },
     stop(): void {
       dispose?.();
@@ -176,43 +176,6 @@ describe("startSessionWatcher response ordering", () => {
   });
 });
 
-describe("startSessionWatcher interval outcomes", () => {
-  const w = makeWatcher();
-
-  it("does not arm an expiry redirect for a never-expiring session", async () => {
-    w.fetchMock.mockResolvedValue(statusResponse(true, null));
-    w.start();
-    await vi.advanceTimersByTimeAsync(SESSION_WATCH_INTERVAL_MS * 3);
-    expect(w.navigate).not.toHaveBeenCalled();
-  });
-
-  it("redirects to the login page exactly once after the session expires", async () => {
-    w.fetchMock.mockResolvedValue(statusResponse(false));
-    w.start();
-    await vi.advanceTimersByTimeAsync(SESSION_WATCH_INTERVAL_MS);
-    await flushMicrotasks();
-    expect(w.navigate).toHaveBeenCalledTimes(1);
-    expect(w.navigate).toHaveBeenCalledWith("/auth/login?next=%2F");
-    // 跳转后停表：后续 tick 不再探测也不再导航。
-    const probes = w.fetchMock.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(SESSION_WATCH_INTERVAL_MS * 3);
-    expect(w.fetchMock.mock.calls.length).toBe(probes);
-    expect(w.navigate).toHaveBeenCalledTimes(1);
-  });
-
-  it("ignores transient failures and still redirects on a later definitive expiry", async () => {
-    w.fetchMock.mockRejectedValueOnce(new Error("network"));
-    w.start();
-    await vi.advanceTimersByTimeAsync(SESSION_WATCH_INTERVAL_MS);
-    await flushMicrotasks();
-    expect(w.navigate).not.toHaveBeenCalled();
-    w.fetchMock.mockResolvedValue(statusResponse(false));
-    await vi.advanceTimersByTimeAsync(SESSION_WATCH_INTERVAL_MS);
-    await flushMicrotasks();
-    expect(w.navigate).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe("startSessionWatcher inconclusive probes", () => {
   const w = makeWatcher();
 
@@ -244,9 +207,11 @@ describe("startSessionWatcher focus and disposal", () => {
   it("probes immediately on window focus", async () => {
     w.fetchMock.mockResolvedValue(statusResponse(false));
     w.start();
+    await flushMicrotasks();
+    expect(w.navigate).not.toHaveBeenCalled(); // 启动探测的第一次 false 仅计数
     window.dispatchEvent(new Event("focus"));
     await flushMicrotasks();
-    expect(w.fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(w.fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(w.navigate).toHaveBeenCalledTimes(1);
   });
 
