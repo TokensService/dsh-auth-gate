@@ -7,10 +7,16 @@
  * 事件作为吊销兜底。拿到明确的 authenticated:false 或到达已确认的 expiresAt 时整页跳转
  * 登录页（next 回跳当前路径）。不确定的探测结果（网络错误、非 200、JSON 解析
  * 失败、字段缺失）一律不跳，也不取消已知期限，避免网络抖动误踢或延迟退出。
+ * 单次 authenticated:false 也不足以跳转：周期探测要求连续多次确认（默认 2 次），
+ * 任何一次 authenticated:true 或不确定结果都把计数清零；只有到达已确认的
+ * expiresAt（服务端明确下发的期限）才到期即跳，不做确认。
  */
 
 /** 探测间隔（毫秒）：用于发现吊销，并作为绝对到期定时器之外的兜底。 */
 export const SESSION_WATCH_INTERVAL_MS = 30_000;
+
+/** 跳转前要求连续探测到 authenticated:false 的默认次数。 */
+export const SESSION_WATCH_CONFIRMATIONS = 2;
 
 /** 状态端点（token / password 两种模式都注册；GET 响应 JSON 含 authenticated）。 */
 export const SESSION_STATUS_URL = "/auth/status";
@@ -53,12 +59,19 @@ export function loginRedirectUrl(pathname: string, search: string): string {
   return `/auth/login?next=${encodeURIComponent(next)}`;
 }
 
-/** 看门狗可调项（生产全用默认值；测试注入间隔与跳转 spy）。 */
+/** 看门狗可调项（生产全用默认值；测试注入间隔、确认次数与跳转 spy）。 */
 export interface SessionWatcherOptions {
   /** 探测间隔（默认 30 秒）。 */
   intervalMs?: number;
+  /** 跳转前要求连续探测到 authenticated:false 的次数（默认 2，最小 1）。 */
+  confirmations?: number;
   /** 整页跳转实现（默认 window.location.assign；jsdom 无真导航，测试注入 spy）。 */
   navigate?: (url: string) => void;
+}
+
+function normalizeConfirmations(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return SESSION_WATCH_CONFIRMATIONS;
+  return Math.max(1, Math.floor(value));
 }
 
 /**
@@ -68,6 +81,7 @@ export interface SessionWatcherOptions {
  */
 export function startSessionWatcher(options: SessionWatcherOptions = {}): () => void {
   const intervalMs = options.intervalMs ?? SESSION_WATCH_INTERVAL_MS;
+  const confirmations = normalizeConfirmations(options.confirmations);
   const navigate =
     options.navigate ??
     ((url: string): void => {
@@ -76,6 +90,7 @@ export function startSessionWatcher(options: SessionWatcherOptions = {}): () => 
   let active = true;
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
   let nextProbeId = 0;
+  let consecutiveUnauthenticated = 0;
 
   const cleanup = (): void => {
     clearInterval(timer);
@@ -110,12 +125,17 @@ export function startSessionWatcher(options: SessionWatcherOptions = {}): () => 
     const probeId = ++nextProbeId;
     const requestStartedAt = performance.now();
     const body = await fetchSessionStatus();
-    if (body === undefined) return; // 状态不确定：保持现状等下一轮
-    if (!active || probeId !== nextProbeId) return;
-    if (body.authenticated === false) {
-      redirect();
+    if (body === undefined) {
+      consecutiveUnauthenticated = 0; // 状态不确定：清零确认计数，等下一轮
       return;
     }
+    if (!active || probeId !== nextProbeId) return;
+    if (body.authenticated === false) {
+      consecutiveUnauthenticated += 1;
+      if (consecutiveUnauthenticated >= confirmations) redirect();
+      return;
+    }
+    consecutiveUnauthenticated = 0;
     if (body.authenticated !== true) return;
     if (body.expiresAt === null) {
       if (expiryTimer !== undefined) clearTimeout(expiryTimer);
