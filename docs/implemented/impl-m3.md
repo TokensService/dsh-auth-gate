@@ -275,6 +275,8 @@ export class PasswordGate implements Gate {
 `decide` order implements P12 (whitelist → cookie session → Bearer session token → deny); **synchronous return**,
 no async, no KDF, no file IO. When `sessions()` returns undefined, both the cookie and bearer channels are skipped
 → deny (consistent with M2: when the session layer is unavailable the gate always denies, except the whitelist).
+When the optional `waitForSessions` readiness hook is injected, the gate instead awaits it with a bounded timeout
+(`SESSION_READINESS_TIMEOUT_MS`, returning a Promise in that path) and re-reads `sessions()` before denying.
 The `kind` parameter follows the `Gate` interface (not used by the password gate, signature consistent).
 
 ### 4.5 `src/auth-common.ts` — pure functions shared by endpoints

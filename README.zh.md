@@ -109,7 +109,9 @@ Google Authenticator 等）里的 6 位验证码（先密码、后验证码）�
 token 模式下恒为 `null`（共享秘密没有用户身份）。`expiresAt` 是有限会话的
 绝对过期时间（epoch 毫秒）；永不过期或未登录时为 `null`。dsh web 内任意页面
 都可 fetch 此端点来显示当前登录用户。`serverTime` 是服务端当前 epoch 毫秒，
-用于在不信任浏览器时钟的前提下计算剩余时长。
+用于在不信任浏览器时钟的前提下计算剩余时长。会话存储暂不可用（如插件热重载
+窗口）时，端点应答 `503` + `{"error":"session_store_unavailable"}` 而不是
+`authenticated: false`，看门狗会把这类探测当作不确定结果而非已登出。
 
 client 包还常驻一个会话看门狗：启动后立即探测 `/auth/status`，有限会话根据
 `expiresAt - serverTime` 在浏览器本地按相对时长定时，并保留每 30 秒、标签页

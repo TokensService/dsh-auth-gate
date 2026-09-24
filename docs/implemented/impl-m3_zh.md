@@ -257,8 +257,9 @@ export class PasswordGate implements Gate {
 
 `decide` 顺序照 P12 实现（白名单 → cookie 会话 → Bearer 会话 token → deny）；**同步返回**，无
 async、无 KDF、无文件 IO。`sessions()` 返回 undefined 时 cookie 与 bearer 通道都跳过 → deny
-（与 M2 一致：会话层不可用时门恒 deny，白名单除外）。`kind` 参数沿用 `Gate` 接口（password 门
-不使用，签名一致）。
+（与 M2 一致：会话层不可用时门恒 deny，白名单除外）。注入了可选的 `waitForSessions` 就绪钩子时，
+门改为先有界等待（上限 `SESSION_READINESS_TIMEOUT_MS`，该路径返回 Promise）并重取 `sessions()`
+再判 deny。`kind` 参数沿用 `Gate` 接口（password 门不使用，签名一致）。
 
 ### 4.5 `src/auth-common.ts` —— 端点共享纯函数
 
