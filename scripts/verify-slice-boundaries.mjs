@@ -38,6 +38,7 @@ const ROOT_FILES = new Set([
   "index.ts",
   "launch-token-bridge.ts",
   "index.test.ts",
+  "index.session-readiness.test.ts",
   "index.password.test.ts",
   "cli.ts",
   "cli.test.ts",

@@ -145,7 +145,8 @@ export class TokenGate implements Gate {
 1. `pathname === AUTH_PATH_PREFIX || pathname.startsWith(AUTH_PATH_PREFIX + "/")` → `"allow"`。
 2. cookie：`parseCookieHeader(req.headers.cookie, this.cookieName)` → 非空
    （`!== undefined && !== ""`）且 `this.sessions()?.getByToken(token) !== undefined` → `"allow"`
-   （`sessions()` 返回 undefined 则跳过此通道）。
+   （`sessions()` 返回 undefined 则跳过此通道；注入了可选的 `waitForSessions` 就绪钩子
+   时，门先有界等待（上限 `SESSION_READINESS_TIMEOUT_MS`）并重取 `sessions()` 再判断）。
 3. Bearer：`req.headers.authorization` 匹配 `/^Bearer\s+(.+)$/i` → `await this.resolveToken()` →
    存在且 `safeEqual(bearer, stored)` → `"allow"`。
 4. 否则 `"deny"`。
@@ -248,6 +249,9 @@ GET/POST `/auth/login` **不能**注册两条 exact 路由）：
   `const authenticated = store !== undefined && token !== undefined && token !== "" &&
 store.getByToken(token) !== undefined;`
   → `200` + `application/json` + `JSON.stringify({ authenticated })` + no-store。
+  会话存储本身不可用（`store === undefined`，如插件热重载期间 storage domain 尚未打开）时，
+  端点改为应答 `503` + `application/json` + `{"error":"session_store_unavailable"}` + no-store，
+  避免轮询状态的客户端把短暂的存储空窗误判为已登出。
 
 `validateNext` 为本文件私有导出：`next` 以单个 `/` 开头
 （`next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")`）**且**

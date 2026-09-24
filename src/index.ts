@@ -24,7 +24,7 @@ import {
 } from "./shared/index.js";
 import { assertGuarded } from "./gate/index.js";
 import { makeLaunchTokenBridge } from "./launch-token-bridge.js";
-import { sessionDomainSpec, SessionStore } from "./session/index.js";
+import { makeSessionReadiness, mountSessionDomain, SessionStore } from "./session/index.js";
 
 /** 稳定 Cordis 插件名（host 组合行 id）。 */
 export const name = "dsh-auth-gate";
@@ -126,49 +126,6 @@ function makeTokenResolver(
 }
 
 /**
- * 会话层软接（M1 逻辑不变）：storageDomain 缺失 → error 日志后守卫照常挂载；
- * 存在 → effect 内 open domain，就绪后把 SessionStore 挂到 auth.sessions。
- */
-function mountSessionDomain(
-  ctx: Context,
-  auth: AuthService,
-  log: { error(message: unknown): void; info(message: unknown): void },
-): (() => () => Promise<void>) | undefined {
-  const storageDomain = ctx.get("storageDomain");
-  if (storageDomain === undefined) {
-    log.error(
-      "storage-domain is unavailable: session persistence is disabled (guards stay mounted)",
-    );
-    return undefined;
-  }
-  return () => {
-    let closed = false;
-    const opening = storageDomain.open(sessionDomainSpec);
-    const ready = opening.then(
-      (domain) => {
-        if (closed) {
-          void domain.close();
-          return;
-        }
-        auth.sessions = new SessionStore(domain.table("sessions"));
-        log.info("session domain opened: dsh_auth_sessions");
-      },
-      (error: unknown) => {
-        log.error(
-          `session domain open failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      },
-    );
-    return async () => {
-      closed = true;
-      await ready.catch(() => undefined);
-      const domain = await opening.catch(() => undefined);
-      await domain?.close();
-    };
-  };
-}
-
-/**
  * 端点注册（按 mode 二选一，包装后的 register；P26）。**立即执行注册**并返回合并
  * disposer（作为 ctx.effect 的 callback 返回值；不得再包一层函数，否则会被 cordis
  * 当作 disposer 存起来，注册永不发生，实测 404）。
@@ -264,22 +221,29 @@ export function apply(ctx: Context, config: AuthConfig): void {
   // 挑战 cookie HMAC 密钥（D10）：进程级随机值，与 limiter / replayGuard 同寿命；
   // 重启/插件重载后在途挑战 cookie 失效（用户需重新输入密码，≤5 分钟窗口）。
   const challengeMacKey = randomBytes(32);
+  // 会话就绪 deferred：热重载窗口内门有界等待就绪（不立即误踢），dispose 时重置。
+  const sessionReadiness = makeSessionReadiness();
 
   const auth: AuthService = {
     sessions: undefined,
     gate:
       config.mode === "password"
-        ? new PasswordGate({ sessions: () => auth.sessions, cookieName: config.cookieName })
+        ? new PasswordGate({
+            sessions: () => auth.sessions,
+            cookieName: config.cookieName,
+            waitForSessions: sessionReadiness.wait,
+          })
         : new TokenGate({
             // token 模式下 makeTokenResolver 必返回函数；`??` 兜底仅类型对齐（不可达且 fail-closed）
             resolveToken: resolveToken ?? (() => Promise.resolve(undefined)),
             sessions: () => auth.sessions,
             cookieName: config.cookieName,
+            waitForSessions: sessionReadiness.wait,
           }),
   };
   ctx.provide("auth", auth);
 
-  const sessionDisposer = mountSessionDomain(ctx, auth, log);
+  const sessionDisposer = mountSessionDomain(ctx, auth, log, sessionReadiness);
   if (sessionDisposer !== undefined) {
     ctx.effect(sessionDisposer, "dsh-auth-gate: session domain");
   }

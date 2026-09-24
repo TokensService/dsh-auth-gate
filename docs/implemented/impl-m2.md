@@ -145,7 +145,9 @@ export class TokenGate implements Gate {
 1. `pathname === AUTH_PATH_PREFIX || pathname.startsWith(AUTH_PATH_PREFIX + "/")` → `"allow"`.
 2. cookie: `parseCookieHeader(req.headers.cookie, this.cookieName)` → non-empty
    (`!== undefined && !== ""`) and `this.sessions()?.getByToken(token) !== undefined` → `"allow"`
-   (if `sessions()` returns undefined, skip this channel).
+   (if `sessions()` returns undefined, skip this channel; when the optional `waitForSessions`
+   readiness hook is injected, the gate first awaits it — bounded by
+   `SESSION_READINESS_TIMEOUT_MS` — and re-reads `sessions()` before judging).
 3. Bearer: `req.headers.authorization` matches `/^Bearer\s+(.+)$/i` → `await this.resolveToken()` →
    exists and `safeEqual(bearer, stored)` → `"allow"`.
 4. Otherwise `"deny"`.
@@ -248,6 +250,10 @@ GET/POST `/auth/login` **cannot** register two exact routes):
   `const authenticated = store !== undefined && token !== undefined && token !== "" &&
 store.getByToken(token) !== undefined;`
   → `200` + `application/json` + `JSON.stringify({ authenticated })` + no-store.
+  If the session store itself is unavailable (`store === undefined`, e.g. the storage domain is
+  still opening during a plugin reload), the endpoint instead answers `503` + `application/json`
+  with body `{"error":"session_store_unavailable"}` + no-store, so clients polling the status do
+  not mistake a transient store gap for a signed-out state.
 
 `validateNext` is a private export of this file: `next` starts with a single `/`
 (`next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")`) **and**

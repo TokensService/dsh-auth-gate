@@ -3,4 +3,5 @@
  * token / password 两个认证面共同消费；跨 slice import 只能走本 barrel。
  */
 export * from "./session-store.js";
+export * from "./session-domain.js";
 //# sourceMappingURL=index.d.ts.map

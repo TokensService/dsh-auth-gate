@@ -244,3 +244,20 @@ describe("GET /auth/status", () => {
     });
   });
 });
+
+describe("GET /auth/status without a ready session store", () => {
+  it("answers 503 session_store_unavailable (not authenticated:false)", async () => {
+    const harness = makeHarness();
+    harness.setStore(undefined);
+    registerPasswordEndpoints(harness.deps);
+    const res = makeRes();
+    await handlerOf(
+      harness,
+      "exact",
+      "/auth/status",
+    )(makeReq({ method: "GET", url: "/auth/status", cookie: "dsh_auth=whatever" }), res.res);
+    expect(res.status).toBe(503);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(JSON.parse(res.body)).toEqual({ error: "session_store_unavailable" });
+  });
+});

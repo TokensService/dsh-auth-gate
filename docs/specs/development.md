@@ -48,7 +48,8 @@ src/
 │   └── self-check.ts  #   包装覆盖自检（fail loud）
 ├── session/           # 会话层（核心机制层，token/password 共同消费）
 │   ├── index.ts
-│   └── session-store.ts  # storage-domain 会话持久化
+│   ├── session-store.ts  # storage-domain 会话持久化
+│   └── session-domain.ts # domain 软接 + 会话就绪 deferred（门的有界等待）
 ├── features/          # 认证面（同层 slice 互不 import，跨 slice 只走 barrel）
 │   ├── token/
 │   │   ├── index.ts

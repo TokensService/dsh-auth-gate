@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Gate, GuardKind } from "../../gate/index.js";
 import { AUTH_PATH_PREFIX } from "../../gate/index.js";
-import type { SessionStore } from "../../session/index.js";
+import { awaitSessionReadiness, type SessionStore } from "../../session/index.js";
 import { parseCookieHeader } from "../../shared/index.js";
 
 /**
@@ -21,6 +21,11 @@ export interface TokenGateOptions {
   /** 会话访问器（M16）：每次 decide 现取（domain 异步就绪；undefined = cookie 通道不可用。 */
   sessions: () => SessionStore | undefined;
   cookieName: string;
+  /**
+   * 会话就绪等待（可选，index.ts 注入会话就绪 deferred）：sessions() 为 undefined
+   * 时有界等待就绪信号后重取再判断（热重载窗口不误踢）；未注入则立即按现状判断。
+   */
+  waitForSessions?: () => Promise<void>;
 }
 
 /** 共享 token 门（M2）：白名单 → 会话 cookie → Bearer，恒时校验，fail-closed。 */
@@ -28,11 +33,13 @@ export class TokenGate implements Gate {
   private readonly resolveToken: () => Promise<string | undefined>;
   private readonly sessions: () => SessionStore | undefined;
   private readonly cookieName: string;
+  private readonly waitForSessions: (() => Promise<void>) | undefined;
 
   constructor(options: TokenGateOptions) {
     this.resolveToken = options.resolveToken;
     this.sessions = options.sessions;
     this.cookieName = options.cookieName;
+    this.waitForSessions = options.waitForSessions;
   }
 
   async decide(
@@ -43,10 +50,14 @@ export class TokenGate implements Gate {
     if (pathname === AUTH_PATH_PREFIX || pathname.startsWith(AUTH_PATH_PREFIX + "/")) {
       return "allow";
     }
+    let store = this.sessions();
+    if (store === undefined && this.waitForSessions !== undefined) {
+      await awaitSessionReadiness(this.waitForSessions);
+      store = this.sessions();
+    }
     const cookie = parseCookieHeader(req.headers.cookie, this.cookieName);
-    if (cookie !== undefined && cookie !== "") {
-      const store = this.sessions();
-      if (store?.getByToken(cookie) !== undefined) return "allow";
+    if (cookie !== undefined && cookie !== "" && store?.getByToken(cookie) !== undefined) {
+      return "allow";
     }
     const authorization = req.headers.authorization;
     const match = /^Bearer\s+(.+)$/i.exec(authorization ?? "");

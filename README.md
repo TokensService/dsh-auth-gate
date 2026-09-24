@@ -145,7 +145,11 @@ the shared secret has no per-user identity. `expiresAt` is the finite session's
 absolute expiry time in epoch milliseconds, or `null` for a non-expiring or
 unauthenticated session. `serverTime` is the server's epoch milliseconds for
 calculating the remaining duration without trusting the browser clock. Any page
-inside dsh web can fetch this endpoint to display the current user.
+inside dsh web can fetch this endpoint to display the current user. While the
+session store is temporarily unavailable (for example during a plugin
+hot-reload), the endpoint answers `503` with `{"error":"session_store_unavailable"}`
+instead of reporting `authenticated: false`, so the session watcher treats the
+probe as inconclusive rather than signed out.
 
 The client bundle also runs a background session watcher. It probes
 `/auth/status` immediately, derives a relative timer from `expiresAt` and
