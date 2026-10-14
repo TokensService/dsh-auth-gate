@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
-import { act, createElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminUser } from "./users-api.ts";
 import { USERS_DICT_EN } from "./users-dict.ts";
-import { SettingsUsersSection } from "./users-section.tsx";
+import {
+  buttonByText,
+  click,
+  jsonResponse,
+  makeFetchMock,
+  renderSection,
+  rowOf,
+  typeInto,
+  type FetchMock,
+} from "./users-section-helpers.tsx";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -25,91 +32,6 @@ const BOB: AdminUser = {
   current: false,
 };
 
-type FetchMock = ReturnType<
-  typeof vi.fn<(url: string, init?: { method?: string; body?: string }) => Promise<unknown>>
->;
-
-async function flushMicrotasks(): Promise<void> {
-  for (let i = 0; i < 20; i++) await Promise.resolve();
-}
-
-async function renderSection(): Promise<{ root: Root; container: HTMLDivElement }> {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(createElement(SettingsUsersSection, { t }));
-    await flushMicrotasks();
-  });
-  return { root, container };
-}
-
-function jsonResponse(status: number, body: unknown): unknown {
-  return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) };
-}
-
-interface Call {
-  url: string;
-  method: string;
-  body?: Record<string, unknown>;
-}
-
-/** 路由式 fetch mock：GET 列表 + 记录全部变更调用。 */
-function makeFetchMock(users: AdminUser[], mutation?: { status: number; body: unknown }) {
-  const calls: Call[] = [];
-  const mock = vi.fn((url: string, init?: { method?: string; body?: string }): Promise<unknown> => {
-    const method = init?.method ?? "GET";
-    const parsed =
-      init?.body === undefined ? undefined : (JSON.parse(init.body) as Record<string, unknown>);
-    calls.push({ url, method, ...(parsed === undefined ? {} : { body: parsed }) });
-    if (url === "/auth/settings") {
-      const body =
-        method === "PATCH"
-          ? { sessionTtl: parsed?.["sessionTtl"], defaultTtl: 604800 }
-          : { sessionTtl: 604800, defaultTtl: 604800 };
-      return Promise.resolve(jsonResponse(200, body));
-    }
-    const body = method === "GET" ? { users } : (mutation?.body ?? { user: BOB });
-    const status = method === "GET" ? 200 : (mutation?.status ?? 200);
-    return Promise.resolve(jsonResponse(status, body));
-  });
-  return { mock, calls };
-}
-
-function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent === text,
-  );
-  if (button === undefined) throw new Error(`button not found: ${text}`);
-  return button;
-}
-
-/** 按用户名定位行容器（行首 span 文本精确匹配）。 */
-function rowOf(container: HTMLElement, username: string): HTMLElement {
-  const name = [...container.querySelectorAll("span")].find(
-    (candidate) => candidate.textContent === username,
-  );
-  const row = name?.parentElement;
-  if (row == null) throw new Error(`row not found: ${username}`);
-  return row;
-}
-
-async function click(element: HTMLElement): Promise<void> {
-  await act(async () => {
-    element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await flushMicrotasks();
-  });
-}
-
-async function typeInto(input: HTMLInputElement, value: string): Promise<void> {
-  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
-  await act(async () => {
-    descriptor?.set?.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    await flushMicrotasks();
-  });
-}
-
 const fetchMock: FetchMock = vi.fn();
 
 beforeEach(() => {
@@ -125,7 +47,7 @@ describe("SettingsUsersSection states", () => {
   it("lists users with status badges after loading", async () => {
     const { mock } = makeFetchMock([ALICE, BOB]);
     fetchMock.mockImplementation(mock);
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     expect(container.textContent).toContain("alice");
     expect(container.textContent).toContain("bob");
     expect(container.textContent).toContain("you");
@@ -137,7 +59,7 @@ describe("SettingsUsersSection states", () => {
 
   it("shows the unavailable notice in token mode (GET 404)", async () => {
     fetchMock.mockResolvedValue(jsonResponse(404, {}));
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     expect(container.textContent).toContain("unavailable in token mode");
     root.unmount();
     container.remove();
@@ -147,7 +69,7 @@ describe("SettingsUsersSection states", () => {
     const { mock } = makeFetchMock([ALICE]);
     fetchMock.mockImplementation(mock);
     fetchMock.mockRejectedValueOnce(new Error("network")); // 仅首次 GET 失败
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     expect(container.textContent).toContain("Failed to load the user list.");
     await click(buttonByText(container, "Retry"));
     expect(container.textContent).toContain("alice");
@@ -160,7 +82,7 @@ describe("SettingsUsersSection mutations", () => {
   it("adds a user and clears the form on success", async () => {
     const { mock, calls } = makeFetchMock([ALICE]);
     fetchMock.mockImplementation(mock);
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     const nameInput = container.querySelector<HTMLInputElement>("input[type='text']")!;
     const pwInput = container.querySelector<HTMLInputElement>("input[type='password']")!;
     await typeInto(nameInput, "carol");
@@ -175,7 +97,7 @@ describe("SettingsUsersSection mutations", () => {
   it("maps server error codes to localized messages", async () => {
     const { mock } = makeFetchMock([ALICE], { status: 409, body: { error: "duplicate" } });
     fetchMock.mockImplementation(mock);
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     await typeInto(container.querySelector<HTMLInputElement>("input[type='text']")!, "alice");
     await typeInto(container.querySelector<HTMLInputElement>("input[type='password']")!, "pw");
     await click(buttonByText(container, "Add"));
@@ -189,7 +111,7 @@ describe("SettingsUsersSection row actions", () => {
   it("changes a password through the inline editor", async () => {
     const { mock, calls } = makeFetchMock([ALICE, BOB]);
     fetchMock.mockImplementation(mock);
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     await click(buttonByText(rowOf(container, "bob"), "Change password"));
     await typeInto(container.querySelector("input[type='password']")!, "new-pw");
     await click(buttonByText(rowOf(container, "bob"), "Save"));
@@ -208,7 +130,7 @@ describe("SettingsUsersSection row actions", () => {
   it("disables delete/disable for the current user and two-step deletes another", async () => {
     const { mock, calls } = makeFetchMock([ALICE, BOB]);
     fetchMock.mockImplementation(mock);
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     const aliceDelete = buttonByText(rowOf(container, "alice"), "Delete");
     expect(aliceDelete.disabled).toBe(true);
     await click(buttonByText(rowOf(container, "bob"), "Delete"));
@@ -235,7 +157,7 @@ describe("SettingsUsersSection row actions", () => {
       },
     });
     fetchMock.mockImplementation(mock);
-    const { root, container } = await renderSection();
+    const { root, container } = await renderSection(t);
     await click(buttonByText(rowOf(container, "carol"), "Enable TOTP"));
     expect(
       calls.some(
@@ -247,6 +169,49 @@ describe("SettingsUsersSection row actions", () => {
     expect(container.textContent).toContain("otpauth://totp/dsh-auth:carol");
     await click(buttonByText(container, "Done"));
     expect(container.textContent).not.toContain("JBSWY3DP");
+    root.unmount();
+    container.remove();
+  });
+});
+
+describe("SettingsUsersSection admin role actions (D18)", () => {
+  it("grants and revokes the role from row actions; the self toggle stays disabled", async () => {
+    const carolAdmin: AdminUser = {
+      username: "carol",
+      disabled: false,
+      totp: false,
+      admin: true,
+      current: false,
+    };
+    const { mock, calls } = makeFetchMock([ALICE, BOB, carolAdmin]);
+    fetchMock.mockImplementation(mock);
+    const { root, container } = await renderSection(t);
+    expect(buttonByText(rowOf(container, "alice"), "Remove admin").disabled).toBe(true);
+    await click(buttonByText(rowOf(container, "bob"), "Make admin"));
+    await click(buttonByText(rowOf(container, "carol"), "Remove admin"));
+    expect(
+      calls.some(
+        (c) => c.method === "PATCH" && c.body?.["username"] === "bob" && c.body?.["admin"] === true,
+      ),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "PATCH" && c.body?.["username"] === "carol" && c.body?.["admin"] === false,
+      ),
+    ).toBe(true);
+    root.unmount();
+    container.remove();
+  });
+
+  it("localizes the self_target error returned by a demotion attempt", async () => {
+    const { mock } = makeFetchMock([ALICE, BOB], { status: 409, body: { error: "self_target" } });
+    fetchMock.mockImplementation(mock);
+    const { root, container } = await renderSection(t);
+    await click(buttonByText(rowOf(container, "bob"), "Make admin"));
+    expect(container.querySelector("[role='alert']")?.textContent).toBe(
+      "Cannot disable, delete, or demote the signed-in user.",
+    );
     root.unmount();
     container.remove();
   });

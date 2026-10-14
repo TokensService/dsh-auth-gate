@@ -1,5 +1,9 @@
 # Admin role and permission matrix for user management (2026-09-14)
 
+> Amended 2026-10-14 by [Web admin role management in user management](2026-10-14-web-admin-role-management.en.md):
+> `PATCH /auth/users` now accepts `admin: boolean` (admin-only; self-demotion
+> -> `409 self_target`), so roles are no longer CLI-only.
+
 ## Decision
 
 `users.yaml` records gain an optional `role: "admin"` field (absent = regular

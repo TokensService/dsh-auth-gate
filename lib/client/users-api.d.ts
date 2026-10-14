@@ -30,6 +30,8 @@ export interface UserUpdate {
     password?: string;
     disabled?: boolean;
     totp?: "enable" | "disable";
+    /** 授予/回收 admin 角色（D18；服务端裁定权限，收回自己 → self_target）。 */
+    admin?: boolean;
 }
 /** GET /auth/users；404 = token 模式（端点未注册，落 /auth 兜底）。 */
 export declare function listUsers(): Promise<ListResult>;

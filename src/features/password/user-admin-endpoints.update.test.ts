@@ -190,3 +190,81 @@ describe("non-admin sessions (D13)", () => {
     expect(JSON.parse(res.body)).toEqual({ error: "forbidden" });
   });
 });
+
+describe("PATCH /auth/users admin role (D18)", () => {
+  it("grants and revokes the admin role for another user", async () => {
+    const h = await makeHarness();
+    const grant = await call(h, "PATCH", { username: "bob", admin: true });
+    expect(grant.status).toBe(200);
+    expect(JSON.parse(grant.body)).toEqual({
+      user: { username: "bob", disabled: false, totp: false, admin: true, current: false },
+    });
+    expect((await h.snapshot()).users.get("bob")?.role).toBe("admin");
+    const revoke = await call(h, "PATCH", { username: "bob", admin: false });
+    expect(revoke.status).toBe(200);
+    expect(JSON.parse(revoke.body)).toEqual({
+      user: { username: "bob", disabled: false, totp: false, admin: false, current: false },
+    });
+    const bob = (await h.snapshot()).users.get("bob")!;
+    expect(bob.role).toBeUndefined();
+    // 回收是逐字段重建：passwordHash/disabled/totpSecret 都不受影响。
+    await expect(verifyPassword("bob-pw", bob.passwordHash)).resolves.toBe(true);
+  });
+
+  it("keeps the role across password/TOTP/disabled writes after a grant", async () => {
+    const h = await makeHarness();
+    expect((await call(h, "PATCH", { username: "bob", admin: true })).status).toBe(200);
+    expect((await call(h, "PATCH", { username: "bob", password: "new-pw" })).status).toBe(200);
+    expect((await h.snapshot()).users.get("bob")?.role).toBe("admin");
+    expect((await call(h, "PATCH", { username: "bob", totp: "disable" })).status).toBe(200);
+    expect((await h.snapshot()).users.get("bob")?.role).toBe("admin");
+    expect((await call(h, "PATCH", { username: "bob", disabled: true })).status).toBe(200);
+    expect((await h.snapshot()).users.get("bob")?.role).toBe("admin");
+  });
+
+  it("refuses to revoke the signed-in admin's own role", async () => {
+    const h = await makeHarness({ bob: { role: "admin" } });
+    const res = await call(h, "PATCH", { username: "alice", admin: false });
+    expect(res.status).toBe(409);
+    expect(JSON.parse(res.body)).toEqual({ error: "self_target" });
+    expect((await h.snapshot()).users.get("alice")?.role).toBe("admin");
+  });
+
+  it("rejects a non-boolean admin field", async () => {
+    const h = await makeHarness();
+    const res = await call(h, "PATCH", { username: "bob", admin: "yes" });
+    expect(JSON.parse(res.body)).toEqual({ error: "invalid_field" });
+    expect((await h.snapshot()).users.get("bob")?.role).toBeUndefined();
+  });
+
+  it("rejects role changes from a non-admin session (own target or not)", async () => {
+    const h = await makeHarness();
+    const cookie = await h.cookieFor("bob");
+    const patch = (body: unknown) =>
+      h.call(makeReq({ method: "PATCH", contentType: "application/json", body, cookie }));
+    expect(JSON.parse((await patch({ username: "bob", admin: true })).body)).toEqual({
+      error: "forbidden",
+    });
+    expect(JSON.parse((await patch({ username: "alice", admin: false })).body)).toEqual({
+      error: "forbidden",
+    });
+    expect((await h.snapshot()).users.get("bob")?.role).toBeUndefined();
+    expect((await h.snapshot()).users.get("alice")?.role).toBe("admin");
+  });
+
+  it("treats a demoted admin's lingering session as non-admin (fail-closed)", async () => {
+    const h = await makeHarness({ bob: { role: "admin" } });
+    const bobCookie = await h.cookieFor("bob");
+    expect((await call(h, "PATCH", { username: "bob", admin: false })).status).toBe(200);
+    expect((await h.snapshot()).users.get("bob")?.role).toBeUndefined();
+    const res = await h.call(
+      makeReq({
+        method: "PATCH",
+        contentType: "application/json",
+        body: { username: "alice", disabled: true },
+        cookie: bobCookie,
+      }),
+    );
+    expect(JSON.parse(res.body)).toEqual({ error: "forbidden" });
+  });
+});
