@@ -1,5 +1,9 @@
 # 用户管理引入 admin 角色与权限矩阵（2026-09-14）
 
+> 2026-10-14 由 [用户管理页开放 admin 角色管理](2026-10-14-web-admin-role-management.zh.md)
+> 修订：`PATCH /auth/users` 新增 `admin: boolean` 字段（仅 admin；自我降权 →
+> `409 self_target`），角色不再仅 CLI 可管。
+
 ## 决定了什么
 
 `users.yaml` 记录新增可选字段 `role: "admin"`（缺省 = 普通用户；strict schema

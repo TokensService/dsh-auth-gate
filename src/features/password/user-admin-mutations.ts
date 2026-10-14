@@ -15,7 +15,7 @@ import {
   type UserAdminErrorCode,
 } from "./user-admin-common.js";
 
-/** PATCH /auth/users {username, password?, disabled?, totp?}：改密/启停/TOTP 启停。 */
+/** PATCH /auth/users {username, password?, disabled?, totp?, admin?}：改密/启停/TOTP 启停/角色授予回收。 */
 export async function handleUserUpdate(
   deps: UserAdminDeps,
   req: IncomingMessage,
@@ -53,7 +53,12 @@ function selfPasswordOnly(
   username: string,
   subject: string,
 ): boolean {
-  return username === subject && body["disabled"] === undefined && body["totp"] === undefined;
+  return (
+    username === subject &&
+    body["disabled"] === undefined &&
+    body["totp"] === undefined &&
+    body["admin"] === undefined
+  );
 }
 
 type UpdatePlan =
@@ -78,13 +83,10 @@ async function planUpdate(
     next = { ...next, passwordHash: await hashPassword(body["password"]) };
     touched = true;
   }
-  if (body["disabled"] !== undefined) {
-    if (typeof body["disabled"] !== "boolean") return { status: 400, code: "invalid_field" };
-    if (body["disabled"] && !record.disabled) {
-      if (username === subject) return { status: 409, code: "self_target" };
-      if (enabledCount(snapshot) <= 1) return { status: 409, code: "last_enabled" };
-    }
-    next = { ...next, disabled: body["disabled"] };
+  const disabledPlan = planDisabled(body["disabled"], next, record, username, subject, snapshot);
+  if (disabledPlan !== undefined) {
+    if ("code" in disabledPlan) return disabledPlan;
+    next = disabledPlan.record;
     touched = true;
   }
   const totpPlan = planTotp(deps, body["totp"], record);
@@ -94,8 +96,58 @@ async function planUpdate(
     secret = totpPlan.secret;
     touched = true;
   }
+  const adminPlan = planAdmin(body["admin"], next, username, subject);
+  if (adminPlan !== undefined) {
+    if ("code" in adminPlan) return adminPlan;
+    next = adminPlan.record;
+    touched = true;
+  }
   if (!touched) return { status: 400, code: "nothing_to_update" };
   return secret === undefined ? { record: next } : { record: next, secret };
+}
+
+/**
+ * admin 角色字段规划（D18）：仅 admin 可达（非 admin 已被 selfPasswordOnly 拦截）。
+ * boolean 校验；收回自己的角色 → 409 self_target（与禁用/删除同款护栏，CLI 仍是
+ * 逃生通道）；enable 写入 role，disable 逐字段重建（与 planTotp disable 同纪律）。
+ */
+function planAdmin(
+  action: unknown,
+  next: UserRecord,
+  username: string,
+  subject: string,
+): { record: UserRecord } | { status: number; code: UserAdminErrorCode } | undefined {
+  if (action === undefined) return undefined;
+  if (typeof action !== "boolean") return { status: 400, code: "invalid_field" };
+  if (!action && username === subject) return { status: 409, code: "self_target" };
+  return { record: action ? { ...next, role: "admin" as const } : stripRole(next) };
+}
+
+/** 移除 role 字段（逐字段重建，与 planTotp disable / CLI setUserAdmin 同纪律）。 */
+function stripRole(record: UserRecord): UserRecord {
+  return {
+    passwordHash: record.passwordHash,
+    disabled: record.disabled,
+    ...(record.totpSecret === undefined ? {} : { totpSecret: record.totpSecret }),
+  };
+}
+
+/** disabled 字段规划：boolean 校验 + 自我禁用/最后启用护栏（D-UM-3）。 */
+function planDisabled(
+  action: unknown,
+  next: UserRecord,
+  record: UserRecord,
+  username: string,
+  subject: string,
+  snapshot: UsersSnapshot,
+): { record: UserRecord } | { status: number; code: UserAdminErrorCode } | undefined {
+  if (action === undefined) return undefined;
+  if (typeof action !== "boolean") return { status: 400, code: "invalid_field" };
+  if (action && !record.disabled) {
+    if (username === subject) return { status: 409, code: "self_target" };
+    if (enabledCount(snapshot) <= 1) return { status: 409, code: "last_enabled" };
+  }
+  return { record: { ...next, disabled: action } };
 }
 
 /** TOTP 字段规划：enable 生成新 secret（已有则 409）；disable 移除（幂等）。 */

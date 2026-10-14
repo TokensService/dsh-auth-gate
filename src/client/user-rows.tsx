@@ -63,6 +63,20 @@ const FORM_ROW_STYLE: CSSProperties = {
 
 type Translate = (key: string) => string;
 
+/** 行内操作小按钮（统一样式与禁用态；删除的两步确认由 AdminActions 自持）。 */
+function RowButton(props: { label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      style={SMALL_BUTTON_STYLE}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
+  );
+}
+
 export interface UserRowProps {
   user: AdminUser;
   t: Translate;
@@ -72,6 +86,7 @@ export interface UserRowProps {
   onPassword: (username: string, password: string) => Promise<boolean>;
   onToggleDisabled: (user: AdminUser) => Promise<boolean>;
   onTotp: (user: AdminUser) => Promise<boolean>;
+  onToggleAdmin: (user: AdminUser) => Promise<boolean>;
   onDelete: (username: string) => Promise<boolean>;
 }
 
@@ -88,14 +103,11 @@ export function UserRow(props: UserRowProps) {
       {user.totp && <span style={BADGE_STYLE}>{t("users.totpOn")}</span>}
       <span style={ACTIONS_STYLE}>
         {(isAdmin || user.current) && (
-          <button
-            type="button"
-            style={SMALL_BUTTON_STYLE}
+          <RowButton
+            label={t("users.changePassword")}
             disabled={busy}
             onClick={() => setEditing((open) => !open)}
-          >
-            {t("users.changePassword")}
-          </button>
+          />
         )}
         {isAdmin && (
           <AdminActions
@@ -104,6 +116,7 @@ export function UserRow(props: UserRowProps) {
             busy={busy}
             onToggleDisabled={props.onToggleDisabled}
             onTotp={props.onTotp}
+            onToggleAdmin={props.onToggleAdmin}
             onDelete={props.onDelete}
           />
         )}
@@ -123,61 +136,53 @@ export function UserRow(props: UserRowProps) {
   );
 }
 
-/** 管理操作组（仅 admin 挂载）：启停 + TOTP 启停 + 删除（两步确认）。 */
+/** 管理操作组（仅 admin 挂载）：启停 + TOTP 启停 + 角色授予/回收 + 删除（两步确认）。 */
 function AdminActions(props: {
   user: AdminUser;
   t: Translate;
   busy: boolean;
   onToggleDisabled: (user: AdminUser) => Promise<boolean>;
   onTotp: (user: AdminUser) => Promise<boolean>;
+  onToggleAdmin: (user: AdminUser) => Promise<boolean>;
   onDelete: (username: string) => Promise<boolean>;
 }) {
   const { user, t, busy } = props;
   const [confirming, setConfirming] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        style={SMALL_BUTTON_STYLE}
+      <RowButton
+        label={user.disabled ? t("users.enable") : t("users.disable")}
         disabled={busy || user.current}
         onClick={() => void props.onToggleDisabled(user)}
-      >
-        {user.disabled ? t("users.enable") : t("users.disable")}
-      </button>
-      <button
-        type="button"
-        style={SMALL_BUTTON_STYLE}
+      />
+      <RowButton
+        label={user.totp ? t("users.totpDisable") : t("users.totpEnable")}
         disabled={busy}
         onClick={() => void props.onTotp(user)}
-      >
-        {user.totp ? t("users.totpDisable") : t("users.totpEnable")}
-      </button>
+      />
+      <RowButton
+        label={user.admin ? t("users.adminRevoke") : t("users.adminGrant")}
+        disabled={busy || user.current}
+        onClick={() => void props.onToggleAdmin(user)}
+      />
       {confirming ? (
         <>
-          <button
-            type="button"
-            style={SMALL_BUTTON_STYLE}
+          <RowButton
+            label={t("users.confirmDelete")}
             disabled={busy}
             onClick={() => {
               setConfirming(false);
               void props.onDelete(user.username);
             }}
-          >
-            {t("users.confirmDelete")}
-          </button>
-          <button type="button" style={SMALL_BUTTON_STYLE} onClick={() => setConfirming(false)}>
-            {t("users.cancel")}
-          </button>
+          />
+          <RowButton label={t("users.cancel")} onClick={() => setConfirming(false)} />
         </>
       ) : (
-        <button
-          type="button"
-          style={SMALL_BUTTON_STYLE}
+        <RowButton
+          label={t("users.delete")}
           disabled={busy || user.current}
           onClick={() => setConfirming(true)}
-        >
-          {t("users.delete")}
-        </button>
+        />
       )}
     </>
   );

@@ -112,4 +112,39 @@ describe("integration: /auth/users RBAC (D13)", () => {
       await unmountStack(fibers, root);
     }
   });
+
+  it("lets an admin grant and revoke the admin role over HTTP (D18)", async () => {
+    const { port, fibers, root } = await mountUsersStack();
+    try {
+      const base = `http://127.0.0.1:${port}`;
+      const cookie = await loginCookie(base);
+      // 非 admin 会话伪造 admin 字段 → 403（对自己/对他人都一样）。
+      const plainCookie = await loginCookie(base, "plain");
+      const forged = await mutate(base, "PATCH", plainCookie, { username: "plain", admin: true });
+      expect(forged.status).toBe(403);
+      expect(await forged.json()).toEqual({ error: "forbidden" });
+      const grant = await mutate(base, "PATCH", cookie, { username: "plain", admin: true });
+      expect(grant.status).toBe(200);
+      expect(await grant.json()).toEqual({
+        user: { username: "plain", disabled: false, totp: false, admin: true, current: false },
+      });
+      // 角色按记录判定：plain 授权前签发的会话立即获得管理权（无需重新登录）。
+      const promoted = await mutate(base, "POST", plainCookie, {
+        username: "carol",
+        password: "pw5",
+      });
+      expect(promoted.status).toBe(201);
+      // 自我降权被拒（脚下枪护栏）。
+      const selfDemote = await mutate(base, "PATCH", cookie, { username: "admin", admin: false });
+      expect(selfDemote.status).toBe(409);
+      expect(await selfDemote.json()).toEqual({ error: "self_target" });
+      // 回收后 plain 的存量会话立即失去管理权（fail-closed）。
+      const revoke = await mutate(base, "PATCH", cookie, { username: "plain", admin: false });
+      expect(revoke.status).toBe(200);
+      const denied = await mutate(base, "POST", plainCookie, { username: "dave", password: "pw6" });
+      expect(denied.status).toBe(403);
+    } finally {
+      await unmountStack(fibers, root);
+    }
+  });
 });

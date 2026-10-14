@@ -11,6 +11,7 @@ import {
   updateUser,
   type AdminUser,
   type MutationResult,
+  type UserUpdate,
 } from "./users-api.ts";
 import { userErrorText } from "./users-dict.ts";
 
@@ -43,7 +44,8 @@ const ERROR_STYLE: CSSProperties = {
 
 /**
  * 「用户管理」设置页（`settings.section` 槽，password 模式专用）：列出 users.yaml
- * 全部用户（管理员/禁用/TOTP/当前登录徽标），支持添加、改密、启停、TOTP 启停、删除。
+ * 全部用户（管理员/禁用/TOTP/当前登录徽标），支持添加、改密、启停、TOTP 启停、
+ * 授予/回收 admin 角色、删除。
  * 数据走同源 `/auth/users` 管理 API（会话自校验；token 模式 404 → 不可用提示）。
  * 权限（D13）：非 admin 只能改自己的密码，故隐藏添加表单与其他行的操作按钮，
  * 服务端对越权变更恒 403（UI 降级只是镜像，API 才是权威）。
@@ -87,6 +89,12 @@ export function SettingsUsersSection({ t }: SettingsUsersSectionProps) {
     [refresh],
   );
 
+  /** 行内 PATCH 变更统一入口（改密/启停/角色授予回收）：busy + 错误码 + 成功后刷新。 */
+  const patchUser = useCallback(
+    (update: UserUpdate) => run(() => updateUser(update)).then((r) => r.ok),
+    [run],
+  );
+
   /** TOTP 启停：enable 额外展示一次性 secret（响应里只有这一次）。 */
   const handleTotp = useCallback(
     async (user: AdminUser): Promise<boolean> => {
@@ -118,12 +126,9 @@ export function SettingsUsersSection({ t }: SettingsUsersSectionProps) {
           onDismissReveal={() => setReveal(null)}
           onChanged={() => void refresh()}
           onAdd={(u, p) => run(() => createUser(u, p)).then((r) => r.ok)}
-          onPassword={(u, p) =>
-            run(() => updateUser({ username: u, password: p })).then((r) => r.ok)
-          }
-          onToggleDisabled={(u) =>
-            run(() => updateUser({ username: u.username, disabled: !u.disabled })).then((r) => r.ok)
-          }
+          onPassword={(u, p) => patchUser({ username: u, password: p })}
+          onToggleDisabled={(u) => patchUser({ username: u.username, disabled: !u.disabled })}
+          onToggleAdmin={(u) => patchUser({ username: u.username, admin: !u.admin })}
           onDelete={(u) => run(() => deleteUser(u)).then((r) => r.ok)}
           onTotp={handleTotp}
         />
@@ -147,6 +152,7 @@ interface ReadyPanelProps {
   onAdd: (username: string, password: string) => Promise<boolean>;
   onPassword: (username: string, password: string) => Promise<boolean>;
   onToggleDisabled: (user: AdminUser) => Promise<boolean>;
+  onToggleAdmin: (user: AdminUser) => Promise<boolean>;
   onDelete: (username: string) => Promise<boolean>;
   onTotp: (user: AdminUser) => Promise<boolean>;
 }
@@ -176,6 +182,7 @@ function ReadyPanel(props: ReadyPanelProps) {
               busy={busy}
               onPassword={props.onPassword}
               onToggleDisabled={props.onToggleDisabled}
+              onToggleAdmin={props.onToggleAdmin}
               onTotp={props.onTotp}
               onDelete={props.onDelete}
             />

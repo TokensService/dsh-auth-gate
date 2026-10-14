@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { type UserAdminDeps } from "./user-admin-common.js";
-/** PATCH /auth/users {username, password?, disabled?, totp?}：改密/启停/TOTP 启停。 */
+/** PATCH /auth/users {username, password?, disabled?, totp?, admin?}：改密/启停/TOTP 启停/角色授予回收。 */
 export declare function handleUserUpdate(deps: UserAdminDeps, req: IncomingMessage, res: ServerResponse): Promise<void>;
 /** DELETE /auth/users {username}：删除用户（仅 admin）；自我删除/最后一个启用用户保护。 */
 export declare function handleUserDelete(deps: UserAdminDeps, req: IncomingMessage, res: ServerResponse): Promise<void>;

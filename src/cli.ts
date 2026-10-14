@@ -184,7 +184,7 @@ async function disableUser(file: string, name: string | undefined, io: CliIo): P
   return 0;
 }
 
-/** `dsh-auth user admin <enable|disable> <name>`：授予/回收 admin 角色（D13，唯一入口）。 */
+/** `dsh-auth user admin <enable|disable> <name>`：授予/回收 admin 角色（D13；网页用户管理页经 PATCH admin 字段亦可，D18）。 */
 async function setUserAdmin(
   file: string,
   command: string | undefined,

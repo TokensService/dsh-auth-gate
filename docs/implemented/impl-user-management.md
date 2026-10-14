@@ -26,7 +26,7 @@ and delete users from the browser.
 | `GET /auth/users`                                | `200 {"users":[{username,disabled,totp,admin,current}]}`, sorted by username, never contains hashes/secrets; readable by any session                                                                                         |
 | `POST` new user (admin only)                     | validate username (`USERNAME_RE`) + non-empty password -> scrypt hash -> atomic rewrite; `201` + user view                                                                                                                   |
 | `POST`/`DELETE` with a non-admin session         | `403 forbidden` (D13: user management is admin-only)                                                                                                                                                                         |
-| `PATCH` with a non-admin session                 | only the **own password** may change; other targets or `disabled`/`totp` fields -> `403 forbidden`                                                                                                                           |
+| `PATCH` with a non-admin session                 | only the **own password** may change; other targets or `disabled`/`totp`/`admin` fields -> `403 forbidden`                                                                                                                   |
 | `POST` duplicate / invalid username / empty pw   | `409 duplicate` / `400 invalid_username` / `400 empty_password`                                                                                                                                                              |
 | `PATCH` password                                 | re-hash with fresh salt; old password stops verifying immediately                                                                                                                                                            |
 | Username change                                  | unsupported: the username is the primary key; no role can rename via API/page (delete + recreate instead)                                                                                                                    |
@@ -34,6 +34,8 @@ and delete users from the browser.
 | `PATCH disabled:true` / `DELETE` last enabled    | `409 last_enabled` (lockout prevention: at least one enabled user must remain)                                                                                                                                               |
 | `PATCH totp:"enable"`                            | generates a secret, persists it, and returns `{totpSecret,totpUri}` **once** (409 `totp_exists` if set)                                                                                                                      |
 | `PATCH totp:"disable"`                           | removes the secret (idempotent, preserves `role`)                                                                                                                                                                            |
+| `PATCH admin:true/false` (admin only)            | grants/revokes the `admin` role; `200` + user view; applies to the target's live sessions immediately (role judged from the record); non-boolean -> `400 invalid_field`                                                      |
+| `PATCH admin:false` on self                      | `409 self_target` (foot-gun guard mirroring self-disable; the CLI stays the escape hatch)                                                                                                                                    |
 | `DELETE` user (admin only)                       | removes from `users.yaml`; `200 {"deleted":name}`; self-delete -> `409 self_target`                                                                                                                                          |
 | Non-JSON body on mutations                       | `415 unsupported_media_type` (forms cannot forge a JSON content type; CSRF layer on top of SameSite=Lax)                                                                                                                     |
 | Body > 16 KiB / invalid JSON                     | `413 body_too_large` / `400 bad_json`                                                                                                                                                                                        |
@@ -79,12 +81,13 @@ with stable machine codes; the client localizes by code, never by message text.
   real collision risk that does not apply to the sparsely populated section
   band). Texts ship in the `auth` locale namespace (zh/en), error keys are
   `users.error.<code>`.
-- **D-UM-7** (D13): `users.yaml` records gain an optional `role: "admin"`
+- **D-UM-7** (D13, amended by D18): `users.yaml` records gain an optional `role: "admin"`
   (absent = regular user; the strict zod schema accepts only the literal
-  `admin`). Roles are granted/revoked via the CLI only
-  (`dsh-auth user add --admin` / `dsh-auth user admin <enable|disable> <name>`) -
-  the API never changes roles, so the web surface cannot mint new admins;
-  privilege escalation requires shell access.
+  `admin`). Roles were originally granted/revoked via the CLI only
+  (`dsh-auth user add --admin` / `dsh-auth user admin <enable|disable> <name>`);
+  D18 opened role management to the page/API (see D-UM-11) - the shell is no
+  longer required to mint an admin, but every role change still requires an
+  admin session.
 - **D-UM-8** (D13): permission matrix - GET is readable by any session;
   POST/DELETE are admin-only; for PATCH an admin may edit any user while a
   non-admin may only change their own password (other targets/fields ->
@@ -102,8 +105,8 @@ with stable machine codes; the client localizes by code, never by message text.
   every invalid form collapsed into 404). The server parses `username,password`
   lines for both sources (line-numbered, machine-readable failures), writes
   all-or-nothing atomically; caps are 256 KiB / 100 entries (total scrypt cost
-  stays in seconds). Imported users are always regular users (roles are
-  CLI-only, D13).
+  stays in seconds). Imported users are always regular users (roles never come
+  from an import, D13/D18).
 - **D-UM-10** (D16, amended by D17): the login timeout (session TTL) is configurable at
   runtime. The value lives in a `settings.yaml` co-located with users.yaml
   (strict zod schema, atomic 0600 write, same discipline as writeUsersFile;
@@ -119,6 +122,20 @@ with stable machine codes; the client localizes by code, never by message text.
   their original schedule. The plugin default is `0` (never expires). The page
   shows the current value near the top (read-only for non-admins); admins choose
   never expires or edit a finite timeout in whole hours.
+- **D-UM-11** (D18): the `admin` role is manageable from the page after all
+  (owner request 2026-10-14: an admin may configure other users as admin in
+  user management). PATCH accepts `admin: boolean`, admin-only - the non-admin
+  self-password rule rejects the field with `403 forbidden`. Granting sets
+  `role: "admin"`; revoking strips the field by rebuilding the record
+  field-by-field (same discipline as TOTP-disable, preserving hash/disabled/
+  TOTP). `admin:false` on the signed-in user -> `409 self_target` (foot-gun
+  guard mirroring self-disable; the CLI stays the escape hatch). Role changes
+  apply to the target's live sessions immediately - the role is judged from
+  the record on every request, so a demoted admin's session degrades to
+  non-admin at once (fail-closed, the D8 mirror of the deleted-admin row).
+  The page adds a grant/revoke button per row (disabled on the own row, like
+  disable/delete) and the `self_target` copy now covers demotion. POST create
+  still mints regular users only - promotion stays a separate deliberate act.
 
 ## 4. Deployment notes
 
@@ -154,9 +171,11 @@ with stable machine codes; the client localizes by code, never by message text.
   Bearer fallback, 405, list with admin markers + a non-admin view, create +
   400/409/415 cases, non-admin POST 403) and
   `user-admin-endpoints.update.test.ts` (password change round-trip,
-  disable/enable, self/last-enabled guards, TOTP enable/disable, delete, the
-  non-admin matrix: own-password only / everything else 403 / a deleted
-  admin's live session degrades). Shared harness:
+  disable/enable, self/last-enabled guards, TOTP enable/disable, delete,
+  admin role grant/revoke + self-demotion 409 + non-boolean 400 + role
+  preserved across password/TOTP/disabled writes, the
+  non-admin matrix: own-password only / everything else (incl. the `admin`
+  field) 403 / a deleted or demoted admin's live session degrades). Shared harness:
   `test/user-admin-harness.ts` (real `users.yaml` round-trip in a temp dir +
   in-memory session table).
 - Import: `src/features/password/user-admin-import.test.ts` (parseImportText
@@ -169,11 +188,15 @@ with stable machine codes; the client localizes by code, never by message text.
   storage-domain + WebServer + plugin; shared base
   `integration-users-helpers.ts`): unauthenticated 401, list with
   `current`/`admin` markers, create -> real sign-in, duplicate 409,
-  self-target 409, delete persistence, 405/415, the non-admin 403 matrix;
+  self-target 409, delete persistence, 405/415, the non-admin 403 matrix,
+  admin role grant/revoke over real HTTP (forged non-admin grant 403,
+  pre-existing sessions gain/lose management rights with the record,
+  self-demotion 409);
   import: real sign-in after a text import, absolute-path import with real
   sign-in + non-`.txt`/relative 404s, non-admin 403, GET 405.
 - Client: `src/client/users-section.test.tsx` (states + mutations + TOTP
-  reveal), `users-section.nonadmin.test.tsx` (degraded non-admin UI),
+  reveal + admin grant/revoke row actions, self toggle disabled, localized
+  `self_target` copy), `users-section.nonadmin.test.tsx` (degraded non-admin UI),
   `user-import.test.tsx` (panel visibility, local raw-text upload,
   absolute-path import without any file listing, localized per-line failures);
   `logout-action.test.tsx`
@@ -203,3 +226,4 @@ with stable machine codes; the client localizes by code, never by message text.
 | 28aeba3       | feat: txt batch import (D14), local/server dual file browsing, `/auth/users/import` sandbox                    |
 | 1d302b7       | feat: batch import switches to an arbitrary absolute server path `{path}` (D15); imports/ sandbox mode removed |
 | (this change) | feat: runtime-configurable login timeout (D16): page setting + `/auth/settings` API                            |
+| (this change) | feat: admin role grant/revoke from the user management page (D18): `PATCH admin` field + per-row action        |

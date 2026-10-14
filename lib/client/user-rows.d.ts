@@ -12,6 +12,7 @@ export interface UserRowProps {
     onPassword: (username: string, password: string) => Promise<boolean>;
     onToggleDisabled: (user: AdminUser) => Promise<boolean>;
     onTotp: (user: AdminUser) => Promise<boolean>;
+    onToggleAdmin: (user: AdminUser) => Promise<boolean>;
     onDelete: (username: string) => Promise<boolean>;
 }
 /** 单个用户行：状态徽标 + 改密内联表单 + 管理操作组（仅 admin，删除两步确认）。 */

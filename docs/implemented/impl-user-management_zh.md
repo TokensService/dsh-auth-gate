@@ -23,7 +23,7 @@
 | `GET /auth/users`                               | `200 {"users":[{username,disabled,totp,admin,current}]}`，按用户名字典序，绝不含哈希/secret；任意会话可读                                                                         |
 | `POST` 新用户（仅 admin）                       | 校验用户名（`USERNAME_RE`）+ 非空密码 → scrypt 哈希 → 原子重写；`201` + 用户视图                                                                                                  |
 | `POST`/`DELETE` 非 admin 会话                   | `403 forbidden`（D13：用户管理仅管理员）                                                                                                                                          |
-| `PATCH` 非 admin 会话                           | 仅允许改**自己的密码**；目标非己或带 `disabled`/`totp` 字段 → `403 forbidden`                                                                                                     |
+| `PATCH` 非 admin 会话                           | 仅允许改**自己的密码**；目标非己或带 `disabled`/`totp`/`admin` 字段 → `403 forbidden`                                                                                             |
 | `POST` 重名/非法用户名/空密码                   | `409 duplicate` / `400 invalid_username` / `400 empty_password`                                                                                                                   |
 | `PATCH` 改密码                                  | 新 salt 重哈希；旧密码立即失效                                                                                                                                                    |
 | 用户名变更                                      | 不支持：用户名即主键，任何角色都不能经 API/页面改名（只能删除后重建）                                                                                                             |
@@ -31,6 +31,8 @@
 | `PATCH disabled:true`/`DELETE` 最后启用用户     | `409 last_enabled`（防锁死：至少保留一个启用用户）                                                                                                                                |
 | `PATCH totp:"enable"`                           | 生成 secret 并落盘，响应**一次性**返回 `{totpSecret,totpUri}`（已有 secret → 409 `totp_exists`）                                                                                  |
 | `PATCH totp:"disable"`                          | 移除 secret（幂等，保留 role）                                                                                                                                                    |
+| `PATCH admin:true/false`（仅 admin）            | 授予/回收 `admin` 角色；`200` + 用户视图；对目标的在途会话立即生效（角色随记录判定）；非布尔值 → `400 invalid_field`                                                              |
+| `PATCH admin:false` 针对自己                    | `409 self_target`（与自我禁用同款的防误操作；CLI 仍是逃生通道）                                                                                                                   |
 | `DELETE` 用户（仅 admin）                       | 从 `users.yaml` 移除；`200 {"deleted":name}`；自我删除 → `409 self_target`                                                                                                        |
 | 变更请求体非 JSON                               | `415 unsupported_media_type`（表单无法伪造 JSON content-type；SameSite=Lax 之上的 CSRF 层）                                                                                       |
 | 请求体 > 16 KiB / JSON 非法                     | `413 body_too_large` / `400 bad_json`                                                                                                                                             |
@@ -70,10 +72,11 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   第三方页（如 better-sidebar 100）之前）；固定常量、不加配置旋钮（D4 的
   动机是真实碰撞风险，section 区段稀疏，不适用）。文案挂 `auth` 词典域
   （zh/en），错误键为 `users.error.<code>`。
-- **D-UM-7**（D13）：`users.yaml` 记录新增可选 `role: "admin"`（缺省=普通
-  用户；zod strict schema 只认字面量 `admin`）。角色只能经 CLI 授予/回收
-  （`dsh-auth user add --admin` / `dsh-auth user admin <enable|disable> <name>`），
-  API 不开放角色变更——web 面永远造不出新管理员，提权必须走 shell。
+- **D-UM-7**（D13，D18 修订）：`users.yaml` 记录新增可选 `role: "admin"`（缺省=普通
+  用户；zod strict schema 只认字面量 `admin`）。角色最初只能经 CLI 授予/回收
+  （`dsh-auth user add --admin` / `dsh-auth user admin <enable|disable> <name>`）；
+  D18 起页面/API 也开放角色管理（见 D-UM-11）——造新管理员不再必须走 shell，
+  但任何角色变更仍要求 admin 会话。
 - **D-UM-8**（D13）：权限矩阵——GET 任意会话可读；POST/DELETE 仅 admin；
   PATCH 中 admin 可改任意用户，非 admin 只能改自己的密码（其余目标/字段 →
   `403 forbidden`）。页面按 `users[].admin` + `current` 降级 UI（藏添加表单
@@ -86,7 +89,7 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   `<usersDir>/imports/` 沙箱连同 `{file}` 来源与 GET 列举一并移除——仍仅
   admin、限 `.txt` 后缀、大小封顶，一切非法形态一律 404）。服务端统一解析
   `用户名,密码` 行（行号明细可机读），all-or-nothing 原子写；上限 256 KiB /
-  100 条（scrypt 总成本秒级）。导入用户一律普通角色（角色 CLI-only，D13）。
+  100 条（scrypt 总成本秒级）。导入用户一律普通角色（角色不随导入授予，D13/D18）。
 - **D-UM-10**（D16，D17 修订）：登录超时（会话 TTL）运行期可配。设置落在与 users.yaml
   同目录的 `settings.yaml`（strict zod schema、原子写 0600，同 writeUsersFile
   纪律；零新配置，`usersFile` 覆盖时随之迁移）。新 exact 路由 `/auth/settings`
@@ -98,6 +101,17 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   TTL 非认证边界）。生效语义与 D-UM-5 脚注一致：只影响新会话，存量会话按
   签发时 TTL 过期。插件默认值为 `0`（永不过期）。页面顶部展示当前值（非 admin
   只读），admin 可选择永不过期或按整小时修改有限时长。
+- **D-UM-11**（D18）：`admin` 角色最终仍开放到页面管理（owner 要求
+  2026-10-14：admin 可在用户管理中把其他用户配置为 admin）。PATCH 接受
+  `admin: boolean`，仅 admin——非 admin 的「仅自己密码」规则对该字段一律
+  `403 forbidden`。授予即写入 `role: "admin"`；回收按逐字段重建记录的方式
+  移除该字段（与 TOTP disable 同纪律，保留 hash/disabled/TOTP）。对自己
+  `admin:false` → `409 self_target`（与自我禁用同款的防误操作，CLI 仍是
+  逃生通道）。角色变更对目标的在途会话立即生效——角色每次请求都按记录
+  判定，被降权 admin 的会话即刻降级为非 admin（fail-closed，与被删 admin
+  行互为 D8 镜像）。页面每行新增授予/回收按钮（自己一行禁用，与禁用/删除
+  一致），`self_target` 文案同步覆盖降权语义。POST 新建仍只造普通用户——
+  提拔保持为单独的显式 PATCH 动作。
 
 ## 4. 部署说明
 
@@ -125,8 +139,9 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
 - 单测：`src/features/password/user-admin-endpoints.test.ts`（认证矩阵、
   Bearer 兜底、405、列表（含 admin 标记/非 admin 视角）、新增 + 400/409/415、
   非 admin POST 403）与 `user-admin-endpoints.update.test.ts`（改密往返、
-  禁用/启用、自我/最后启用保护、TOTP 启停、删除、非 admin 权限矩阵：仅自己
-  的密码可改/其余 403/被删 admin 在途会话降级）。共享基座：
+  禁用/启用、自我/最后启用保护、TOTP 启停、删除、admin 角色授予/回收 +
+  自我降权 409 + 非布尔 400 + 其余写路径保留角色、非 admin 权限矩阵：仅自己
+  的密码可改/其余（含 `admin` 字段）403/被删或被降权 admin 在途会话降级）。共享基座：
   `test/user-admin-harness.ts`（临时目录真实 `users.yaml` 往返 + 内存会话表）。
 - 导入：`src/features/password/user-admin-import.test.ts`（parseImportText 纯
   函数行级用例 + POST text/path 成功、all-or-nothing 行号明细、重名、
@@ -136,9 +151,11 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
   ——真实栈（storage-json + storage-domain + WebServer + 插件，共享基座
   `integration-users-helpers.ts`）：未认证 401、带 `current`/`admin` 标记的
   列表、创建后真实登录、重名 409、自我目标 409、删除持久化、405/415、非 admin
-  403 矩阵；导入：text 导入后真实登录、绝对路径导入后真实登录 + 非 `.txt`/
-  相对路径 404、非 admin 403、GET 405。
-- client：`src/client/users-section.test.tsx`（三态 + 变更 + TOTP 展示）、
+  403 矩阵、admin 角色授予/回收的真实 HTTP 链路（非 admin 伪造授予 403、
+  存量会话随记录即时获得/失去管理权、自我降权 409）；导入：text 导入后真实登录、
+  绝对路径导入后真实登录 + 非 `.txt`/相对路径 404、非 admin 403、GET 405。
+- client：`src/client/users-section.test.tsx`（三态 + 变更 + TOTP 展示 +
+  admin 授予/回收行按钮、自身按钮禁用、`self_target` 文案本地化）、
   `users-section.nonadmin.test.tsx`（非 admin 降级 UI）、
   `user-import.test.tsx`（面板显隐、本地文件原文上传、绝对路径导入（无任何
   文件列举）、行号失败明细本地化）；`logout-action.test.tsx` 覆盖 section
@@ -164,3 +181,4 @@ fail-closed 范围：端点位于 `/auth` 门白名单内，因此自行重做�
 | 28aeba3      | feat: txt 批量导入（D14），本地/服务端双文件浏览，`/auth/users/import` 沙箱化导入  |
 | 1d302b7      | feat: 批量导入改用任意服务器绝对路径 `{path}`（D15），移除 imports/ 沙箱模式       |
 | （本次变更） | feat: 登录超时运行期可配（D16）：用户管理页「登录超时」设置 + `/auth/settings` API |
+| （本次变更） | feat: 用户管理页授予/回收 admin 角色（D18）：PATCH `admin` 字段 + 行内操作按钮     |
